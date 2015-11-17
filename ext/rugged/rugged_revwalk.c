@@ -26,7 +26,9 @@
 
 extern VALUE rb_mRugged;
 extern VALUE rb_cRuggedObject;
+extern VALUE rb_cRuggedCommit;
 VALUE rb_cRuggedWalker;
+VALUE rb_cRuggedCommitStats;
 
 static void rb_git_walk__free(git_revwalk *walk)
 {
@@ -475,7 +477,161 @@ static VALUE rb_git_walker_each_oid(int argc, VALUE *argv, VALUE self)
 	return rb_git_walk_with_opts(argc, argv, self, 1);
 }
 
+typedef struct commit_stats {
+	size_t adds, dels;
+	VALUE committer, author;
+	git_oid oid;
+} commit_stats;
 
+static int rb_git_walker_stats_cb(
+	const git_diff_delta *delta,
+	const git_diff_hunk *hunk,
+	const git_diff_line *line,
+	void *payload)
+{
+	commit_stats *stats = payload;
+
+	switch (line->origin) {
+	case GIT_DIFF_LINE_ADDITION: stats->adds++; break;
+	case GIT_DIFF_LINE_DELETION: stats->dels++; break;
+	default: break;
+	}
+
+	return GIT_OK;
+}
+
+static void commit_stats__free(commit_stats *self) {
+	xfree(self);
+}
+
+/*
+ * call-req:
+ *   walker.each_stats { |stats| block }
+ *   walker.each_stats -> Iterator
+
+ *  Perform the walk through the repository, yielding each
+ *  one of the commit status found as a <tt>Rugged::Commit::Status</tt>
+ *  to +block+.
+ *
+ *  If no +block+ is given, an +Iterator+ will be returned.
+ */
+static VALUE rb_git_walker_each_stats(int argc, VALUE *argv, VALUE self)
+{
+	VALUE rb_options, rb_commit_stats;
+	struct walk_options w;
+	int error;
+	git_oid left;
+	git_commit *left_commit, *right_commit;
+	git_tree *left_tree, *right_tree;
+	git_diff *diff;
+	git_diff_options opts = GIT_DIFF_OPTIONS_INIT;
+
+	rb_scan_args(argc, argv, "01", &rb_options);
+
+	if (!rb_block_given_p())
+		return rb_funcall(self, rb_intern("to_enum"), 2, CSTR2SYM("each_stats"), rb_options);
+
+	Data_Get_Struct(self, git_revwalk, w.walk);
+	w.repo = git_revwalk_repository(w.walk);
+
+	w.rb_owner = rugged_owner(self);
+	w.rb_options = Qnil;
+
+	w.oid_only = 0;
+	w.offset = 0;
+	w.limit = UINT64_MAX;
+
+	if (!NIL_P(rb_options))
+		load_walk_limits(&w, rb_options);
+
+	while ((error = git_revwalk_next(&left, w.walk)) == 0) {
+		commit_stats *stats;
+
+		if (w.offset > 0) {
+			w.offset--;
+			continue;
+		}
+
+		error = git_commit_lookup(&left_commit, w.repo, &left);
+		rugged_exception_check(error);
+
+		error = git_commit_tree(&left_tree, left_commit);
+		rugged_exception_check(error);
+
+		if (git_commit_parentcount(left_commit) != 1) {
+			git_commit_free(left_commit);
+			git_tree_free(left_tree);
+			continue;
+		}
+
+		stats = xmalloc(sizeof(commit_stats));
+		stats->adds = stats->dels = 0;
+		stats->committer = rugged_signature_new(git_commit_committer(left_commit), "BINARY");
+		stats->author    = rugged_signature_new(git_commit_author(left_commit), "BINARY");
+		memcpy(&stats->oid, &left, sizeof(git_oid));
+		rb_commit_stats = Data_Wrap_Struct(rb_cRuggedCommitStats, NULL, commit_stats__free, stats);
+
+		error = git_commit_parent(&right_commit, left_commit, 0);
+		rugged_exception_check(error);
+
+		git_commit_free(left_commit);
+
+		error = git_commit_tree(&right_tree, right_commit);
+		rugged_exception_check(error);
+
+		git_commit_free(right_commit);
+
+		error = git_diff_tree_to_tree(&diff, w.repo, right_tree, left_tree, &opts);
+		rugged_exception_check(error);
+
+		git_tree_free(left_tree);
+		git_tree_free(right_tree);
+
+		git_diff_foreach(diff, NULL, NULL, NULL, rb_git_walker_stats_cb, stats);
+		git_diff_free(diff);
+
+		rb_yield(rb_commit_stats);
+
+		if (--w.limit == 0) {
+			break;
+		}
+	}
+
+	if (error != GIT_ITEROVER)
+		rugged_exception_check(error);
+
+	return Qnil;
+}
+
+static VALUE rb_git_commit_stats_adds_GET(VALUE self) {
+	commit_stats *stats;
+	Data_Get_Struct(self, commit_stats, stats);
+	return INT2FIX((int) stats->adds);
+}
+
+static VALUE rb_git_commit_stats_dels_GET(VALUE self) {
+	commit_stats *stats;
+	Data_Get_Struct(self, commit_stats, stats);
+	return INT2FIX((int) stats->dels);
+}
+
+static VALUE rb_git_commit_stats_committer_GET(VALUE self) {
+	commit_stats *stats;
+	Data_Get_Struct(self, commit_stats, stats);
+	return stats->committer;
+}
+
+static VALUE rb_git_commit_stats_author_GET(VALUE self) {
+	commit_stats *stats;
+	Data_Get_Struct(self, commit_stats, stats);
+	return stats->author;
+}
+
+static VALUE rb_git_commit_stats_oid_GET(VALUE self) {
+	commit_stats *stats;
+	Data_Get_Struct(self, commit_stats, stats);
+	return rugged_create_oid(&stats->oid);
+}
 
 void Init_rugged_revwalk(void)
 {
@@ -487,9 +643,17 @@ void Init_rugged_revwalk(void)
 	rb_define_method(rb_cRuggedWalker, "push_range", rb_git_walker_push_range, 1);
 	rb_define_method(rb_cRuggedWalker, "each", rb_git_walker_each, -1);
 	rb_define_method(rb_cRuggedWalker, "each_oid", rb_git_walker_each_oid, -1);
+	rb_define_method(rb_cRuggedWalker, "each_stats", rb_git_walker_each_stats, -1);
 	rb_define_method(rb_cRuggedWalker, "walk", rb_git_walker_each, -1);
 	rb_define_method(rb_cRuggedWalker, "hide", rb_git_walker_hide, 1);
 	rb_define_method(rb_cRuggedWalker, "reset", rb_git_walker_reset, 0);
 	rb_define_method(rb_cRuggedWalker, "sorting", rb_git_walker_sorting, 1);
 	rb_define_method(rb_cRuggedWalker, "simplify_first_parent", rb_git_walker_simplify_first_parent, 0);
+
+	rb_cRuggedCommitStats = rb_define_class_under(rb_cRuggedCommit, "Stats", rb_cObject);
+	rb_define_method(rb_cRuggedCommitStats, "adds", rb_git_commit_stats_adds_GET, 0);
+	rb_define_method(rb_cRuggedCommitStats, "dels", rb_git_commit_stats_dels_GET, 0);
+	rb_define_method(rb_cRuggedCommitStats, "committer", rb_git_commit_stats_committer_GET, 0);
+	rb_define_method(rb_cRuggedCommitStats, "author", rb_git_commit_stats_author_GET, 0);
+	rb_define_method(rb_cRuggedCommitStats, "oid", rb_git_commit_stats_oid_GET, 0);
 }
