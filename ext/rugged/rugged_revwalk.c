@@ -213,7 +213,7 @@ struct walk_options {
 
 	git_repository *repo;
 	git_revwalk *walk;
-	int oid_only, stats_only;
+	int oid_only, stats_only, no_merges;
 	uint64_t offset, limit;
 };
 
@@ -231,8 +231,14 @@ static void load_walk_limits(struct walk_options *w, VALUE rb_options)
 		w->limit = FIX2ULONG(rb_value);
 	}
 
+	rb_value = rb_hash_lookup(rb_options, CSTR2SYM("no_merges"));
+	if (RTEST(rb_value)) {
+		w->no_merges = 1;
+	}
+
 	rb_value = rb_hash_lookup(rb_options, CSTR2SYM("stats_only"));
 	if (RTEST(rb_value)) {
+		w->no_merges = 1;
 		w->stats_only = 1;
 	}
 }
@@ -320,14 +326,12 @@ static VALUE apply_walk_options(VALUE _payload) {
 	w = ((struct apply_walk_options_args *)_payload)->options;
 	commit = ((struct apply_walk_options_args *)_payload)->commit;
 
+	if (w->no_merges && git_commit_parentcount(commit) > 1)
+		return Qnil;
+
 	if (w->stats_only) {
 		error = git_commit_tree(&tree, commit);
 		rugged_exception_check(error);
-
-		if (git_commit_parentcount(commit) != 1) {
-			git_tree_free(tree);
-			return Qnil;
-		}
 
 		stats = xmalloc(sizeof(commit_stats));
 		stats->adds = stats->dels = 0;
@@ -340,14 +344,20 @@ static VALUE apply_walk_options(VALUE _payload) {
 			error = git_commit_tree(&right_tree, right_commit);
 			git_commit_free(right_commit);
 		}
+		else if (error == GIT_ENOTFOUND) {
+			right_tree = NULL;
+			error = GIT_OK;
+		}
+
 		if (error != GIT_OK) {
 			xfree(stats);
 			git_tree_free(tree);
 			rugged_exception_check(error);
 		}
+
 		error = git_diff_tree_to_tree(&diff, w->repo, right_tree, tree, &diff_opts);
 		git_tree_free(tree);
-		git_tree_free(right_tree);
+		if (right_tree) git_tree_free(right_tree);
 		if (error == GIT_OK) {
 			error = git_diff_foreach(diff, NULL, NULL, NULL, rb_git_walker_stats_cb, stats);
 			git_diff_free(diff);
@@ -440,6 +450,15 @@ static VALUE do_walk(VALUE _payload)
  *
  *	- +simplify+: if +true+, the walk will be simplified
  *	to the first parent of each commit.
+ *
+ *  - +no_merges+: if +true+, only commit with only-one parent will
+ *  be yielded.
+ *	Defaults to +false+.
+ *
+ *	- +stats_only+: if +true+, the walker will yield a stats object
+ *  with additions and deletions for each no-merges commit, instead of
+ *  a real +Rugged::Commit+ objects. This option implies +no_merges+.
+ *	Defaults to +false+.
  *
  *	Example:
  *
