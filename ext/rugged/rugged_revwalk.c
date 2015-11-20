@@ -213,6 +213,7 @@ struct walk_options {
 
 	git_repository *repo;
 	git_revwalk *walk;
+	char *path_only;
 	int oid_only, stats_only, no_merges;
 	uint64_t offset, limit;
 };
@@ -233,6 +234,13 @@ static void load_walk_limits(struct walk_options *w, VALUE rb_options)
 
 	rb_value = rb_hash_lookup(rb_options, CSTR2SYM("no_merges"));
 	if (RTEST(rb_value)) {
+		w->no_merges = 1;
+	}
+
+	rb_value = rb_hash_lookup(rb_options, CSTR2SYM("path_only"));
+	if (!NIL_P(rb_value)) {
+		Check_Type(rb_value, T_STRING);
+		w->path_only = StringValueCStr(rb_value);
 		w->no_merges = 1;
 	}
 
@@ -286,18 +294,25 @@ typedef struct commit_stats {
 	git_oid oid;
 } commit_stats;
 
+struct rb_git_walker_stats_cb_args {
+	commit_stats *stats;
+	char *path_only;
+};
+
 static int rb_git_walker_stats_cb(
 	const git_diff_delta *delta,
 	const git_diff_hunk *hunk,
 	const git_diff_line *line,
 	void *payload)
 {
-	commit_stats *stats = payload;
+	struct rb_git_walker_stats_cb_args *args = payload;
 
-	switch (line->origin) {
-	case GIT_DIFF_LINE_ADDITION: stats->adds++; break;
-	case GIT_DIFF_LINE_DELETION: stats->dels++; break;
-	default: break;
+	if (!args->path_only || (strcmp(args->path_only, delta->old_file.path) == 0 && strcmp(args->path_only, delta->new_file.path) == 0)) {
+		switch (line->origin) {
+		case GIT_DIFF_LINE_ADDITION: args->stats->adds++; break;
+		case GIT_DIFF_LINE_DELETION: args->stats->dels++; break;
+		default: break;
+		}
 	}
 
 	return GIT_OK;
@@ -320,8 +335,6 @@ static VALUE apply_walk_options(VALUE _payload) {
 	commit_stats *stats;
 	git_commit *commit, *right_commit;
 	git_tree *tree, *right_tree;
-	git_diff *diff;
-	git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
 
 	w = ((struct apply_walk_options_args *)_payload)->options;
 	commit = ((struct apply_walk_options_args *)_payload)->commit;
@@ -329,7 +342,70 @@ static VALUE apply_walk_options(VALUE _payload) {
 	if (w->no_merges && git_commit_parentcount(commit) > 1)
 		return Qnil;
 
+	if (w->path_only) {
+		git_tree_entry *left_entry, *right_entry;
+
+		error = git_commit_tree(&tree, commit);
+		rugged_exception_check(error);
+
+		error = git_commit_parent(&right_commit, commit, 0);
+		if (error == GIT_OK) {
+			error = git_commit_tree(&right_tree, right_commit);
+			git_commit_free(right_commit);
+		}
+		else if (error == GIT_ENOTFOUND) {
+			right_tree = NULL;
+			error = GIT_OK;
+		}
+
+		if (error != GIT_OK) {
+			git_tree_free(tree);
+			rugged_exception_check(error);
+		}
+
+		error = git_tree_entry_bypath(&left_entry, tree, w->path_only);
+		git_tree_free(tree);
+		if (error == GIT_ENOTFOUND) {
+			left_entry = NULL;
+			error = GIT_OK;
+		} else if (error != GIT_OK) {
+			if (right_tree) git_tree_free(right_tree);
+			rugged_exception_check(error);
+		}
+
+		if (right_tree) {
+			error = git_tree_entry_bypath(&right_entry, right_tree, w->path_only);
+			git_tree_free(right_tree);
+			if (error == GIT_ENOTFOUND) {
+				right_entry = NULL;
+			} else if (error != GIT_OK) {
+				if (left_entry) git_tree_entry_free(left_entry);
+				rugged_exception_check(error);
+			}
+		} else {
+			right_entry = NULL;
+		}
+
+		if (left_entry && right_entry) {
+			int equal;
+			equal = git_oid_equal(git_tree_entry_id(left_entry), git_tree_entry_id(right_entry)) &&
+				    git_tree_entry_filemode(left_entry) == git_tree_entry_filemode(right_entry);
+			git_tree_entry_free(left_entry);
+			git_tree_entry_free(right_entry);
+			if (equal) return Qnil;
+		} else if (left_entry) {
+			git_tree_entry_free(left_entry);
+		} else if (right_entry) {
+			git_tree_entry_free(right_entry);
+		} else {
+			return Qnil;
+		}
+	}
+
 	if (w->stats_only) {
+		git_diff *diff;
+		git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
+
 		error = git_commit_tree(&tree, commit);
 		rugged_exception_check(error);
 
@@ -359,7 +435,10 @@ static VALUE apply_walk_options(VALUE _payload) {
 		git_tree_free(tree);
 		if (right_tree) git_tree_free(right_tree);
 		if (error == GIT_OK) {
-			error = git_diff_foreach(diff, NULL, NULL, NULL, rb_git_walker_stats_cb, stats);
+			struct rb_git_walker_stats_cb_args args;
+			args.stats = stats;
+			args.path_only = w->path_only;
+			error = git_diff_foreach(diff, NULL, NULL, NULL, rb_git_walker_stats_cb, &args);
 			git_diff_free(diff);
 		}
 		if (error != GIT_OK) {
@@ -460,6 +539,9 @@ static VALUE do_walk(VALUE _payload)
  *  a real +Rugged::Commit+ objects. This option implies +no_merges+.
  *	Defaults to +false+.
  *
+ *  - +path_only+: if not +nil+, the walker will only yield commit object
+ *  which changes the specific file. This option implies +no_merges+.
+ *
  *	Example:
  *
  *    Rugged::Walker.walk(repo,
@@ -499,8 +581,10 @@ static VALUE rb_git_walk(int argc, VALUE *argv, VALUE self)
 
 	w.oid_only = 0;
 	w.stats_only = 0;
+	w.no_merges = 0;
 	w.offset = 0;
 	w.limit = UINT64_MAX;
+	w.path_only = NULL;
 
 	if (!NIL_P(w.rb_options))
 		rb_protect(load_all_options, (VALUE)&w, &exception);
@@ -536,8 +620,10 @@ static VALUE rb_git_walk_with_opts(int argc, VALUE *argv, VALUE self, int oid_on
 
 	w.oid_only = oid_only;
 	w.stats_only = 0;
+	w.no_merges = 0;
 	w.offset = 0;
 	w.limit = UINT64_MAX;
+	w.path_only = NULL;
 
 	if (!NIL_P(rb_options))
 		load_walk_limits(&w, rb_options);
