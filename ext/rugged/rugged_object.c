@@ -279,6 +279,77 @@ VALUE rugged_object_rev_parse(VALUE rb_repo, VALUE rb_spec, int as_obj)
 	return ret;
 }
 
+static int rugged_commitish_rev_parse(git_repository* repo, const char *spec, git_commit **commit) {
+	int error;
+	git_object *object;
+	git_tag *tag;
+
+	if ((error = git_revparse_single(&object, repo, spec)) != GIT_OK)
+		return error;
+	while (git_object_type(object) == GIT_OBJ_TAG) {
+		tag = (git_tag *) object;
+		error = git_object_lookup(&object, repo, git_tag_target_id(tag), GIT_OBJ_ANY);
+		git_tag_free(tag);
+		if (error != GIT_OK)
+			return error;
+	}
+
+	if (git_object_type(object) != GIT_OBJ_COMMIT) {
+		git_object_free(object);
+		giterr_set(GITERR_INVALID,
+			"The requested type does not match the type in ODB");
+		return GIT_ENOTFOUND;
+	} else {
+		*commit = (git_commit *) object;
+		return GIT_OK;
+	}
+}
+
+VALUE rb_git_object_rev_parse_commitish(VALUE klass, VALUE rb_repo, VALUE rb_spec)
+{
+	const char *spec;
+	int error;
+	git_repository *repo;
+	git_commit *commit;
+
+	Check_Type(rb_spec, T_STRING);
+	spec = StringValueCStr(rb_spec);
+
+	rugged_check_repo(rb_repo);
+
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = rugged_commitish_rev_parse(repo, spec, &commit);
+	rugged_exception_check(error);
+
+	return rugged_object_new(rb_repo, (git_object *) commit);
+}
+
+VALUE rb_git_object_rev_parse_treeish(VALUE klass, VALUE rb_repo, VALUE rb_spec)
+{
+	const char *spec;
+	int error;
+	git_repository *repo;
+	git_commit *commit;
+	git_tree *tree;
+
+	Check_Type(rb_spec, T_STRING);
+	spec = StringValueCStr(rb_spec);
+
+	rugged_check_repo(rb_repo);
+
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = rugged_commitish_rev_parse(repo, spec, &commit);
+	rugged_exception_check(error);
+
+	error = git_commit_tree(&tree, commit);
+	git_commit_free(commit);
+	rugged_exception_check(error);
+
+	return rugged_object_new(rb_repo, (git_object *) tree);
+}
+
 /*
  *  call-seq: Object.rev_parse(repo, str) -> object
  *
@@ -374,6 +445,8 @@ void Init_rugged_object(void)
 	rb_define_singleton_method(rb_cRuggedObject, "lookup", rb_git_object_lookup, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse", rb_git_object_rev_parse, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse_oid", rb_git_object_rev_parse_oid, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "commitish", rb_git_object_rev_parse_commitish, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "treeish", rb_git_object_rev_parse_treeish, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "new", rb_git_object_lookup, 2);
 
 	rb_define_method(rb_cRuggedObject, "read_raw", rb_git_object_read_raw, 0);

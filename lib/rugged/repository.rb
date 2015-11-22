@@ -99,6 +99,48 @@ module Rugged
       Rugged::Object.lookup(self, oid)
     end
 
+    # Look up a SHA1.
+    #
+    # Returns Rugged::Commit.
+    def lookup_commit(oid)
+      Rugged::Commit.lookup(self, oid)
+    end
+
+    # Look up a SHA1.
+    #
+    # Returns Rugged::Tree.
+    def lookup_tree(oid)
+      Rugged::Tree.lookup(self, oid)
+    end
+
+    # Look up a SHA1.
+    #
+    # Returns Rugged::Blob.
+    def lookup_blob(oid)
+      Rugged::Blob.lookup(self, oid)
+    end
+
+    # Look up a SHA1.
+    #
+    # Returns Rugged::Tag.
+    def lookup_tag(oid)
+      Rugged::Tag::Annotation.lookup(self, oid)
+    end
+
+    # Look up a commit by a revision string.
+    #
+    # Returns Rugged::Commit, it will automatically dereference tag until a commit is got.
+    def commitish(spec)
+      Rugged::Object.commitish(self, spec)
+    end
+
+    # Look up a tree by a revision string.
+    #
+    # Returns Rugged::Tree, it will automatically dereference tag until a commit is got.
+    def treeish(spec)
+      Rugged::Object.treeish(self, spec)
+    end
+
     # Look up an object by a revision string.
     #
     # Returns one of the four classes that inherit from Rugged::Object.
