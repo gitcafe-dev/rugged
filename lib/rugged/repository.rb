@@ -81,15 +81,16 @@ module Rugged
     #
     # from    - The String SHA1 to push onto Walker to begin our walk.
     # sorting - The sorting order of the commits, as defined in the README.
+    # opts    - The walker options.
     # block   - A block that we pass into walker#each.
     #
     # Returns nothing if called with a block, otherwise returns an instance of
     # Enumerable::Enumerator containing Rugged::Commit objects.
-    def walk(from, sorting=Rugged::SORT_DATE, &block)
+    def walk(from, sorting=Rugged::SORT_DATE, opts={}, &block)
       walker = Rugged::Walker.new(self)
       walker.sorting(sorting)
       walker.push(from)
-      walker.each(&block)
+      walker.each(opts, &block)
     end
 
     # Look up a SHA1.
