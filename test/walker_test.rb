@@ -156,4 +156,33 @@ class WalkerTest2 < Rugged::TestCase
     walker.simplify_first_parent
     assert_equal 7, walker.each.to_a.length
   end
+
+  def test_no_merges
+    repo = FixtureRepo.from_libgit2("testrepo")
+    walker = Rugged::Walker.new(repo)
+    walker.push("099fabac3a9ea935598528c27f866e34089c2eff")
+    assert_equal 7, walker.each(no_merges: true).to_a.length
+  end
+
+  def test_stats_only
+    repo = FixtureRepo.from_libgit2("testrepo")
+    walker = Rugged::Walker.new(repo)
+    walker.push("099fabac3a9ea935598528c27f866e34089c2eff")
+    walker.sorting Rugged::SORT_DATE
+    stats = walker.each(stats_only: true).to_a
+    assert_equal 7, stats.length
+    assert_equal stats[0].adds, 1
+    assert_equal stats[0].dels, 0
+    assert_equal stats[1].adds, 1
+    assert_equal stats[1].dels, 0
+    assert_equal stats[3].adds, 1
+    assert_equal stats[3].dels, 1
+  end
+
+  def test_path_only
+    repo = FixtureRepo.from_libgit2("testrepo")
+    walker = Rugged::Walker.new(repo)
+    walker.push("099fabac3a9ea935598528c27f866e34089c2eff")
+    assert_equal 2, walker.each(path_only: 'new.txt').to_a.length
+  end
 end

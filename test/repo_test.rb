@@ -67,9 +67,48 @@ class RepositoryTest < Rugged::TestCase
     assert commits.count > 0
   end
 
+  def test_walking_with_opts
+    oid = "a4a7dce85cf63874e984719f4fdd239f5145052f"
+    list = []
+    @repo.walk(oid, Rugged::SORT_REVERSE, no_merges: true, offset: 1) { |c| list << c }
+    assert list.map {|c| c.oid[0,5] }.join('.'), "5b5b0.4a202.9fd73.c4780"
+  end
+
   def test_lookup_object
     object = @repo.lookup("8496071c1b46c854b31185ea97743be6a8774479")
     assert object.kind_of?(Rugged::Commit)
+  end
+
+  def test_lookup_commit
+    object = @repo.lookup_commit("e90810b8df3e80c413d903f631643c716887138d")
+    assert object.kind_of?(Rugged::Commit)
+  end
+
+  def test_lookup_tree
+    object = @repo.lookup_tree("53fc32d17276939fc79ed05badaef2db09990016")
+    assert object.kind_of?(Rugged::Tree)
+  end
+
+  def test_lookup_blob
+    object = @repo.lookup_blob("0266163a49e280c4f5ed1e08facd36a2bd716bcf")
+    assert object.kind_of?(Rugged::Blob)
+  end
+
+  def test_lookup_tag
+    object = @repo.lookup_tag("b25fa35b38051e4ae45d4222e795f9df2e43f1d1")
+    assert object.kind_of?(Rugged::Tag::Annotation)
+  end
+
+  def test_commitish
+    object = @repo.commitish("test")
+    assert object.kind_of?(Rugged::Commit)
+    assert_equal object.oid, "e90810b8df3e80c413d903f631643c716887138d"
+  end
+
+  def test_treeish
+    object = @repo.treeish("test")
+    assert object.kind_of?(Rugged::Tree)
+    assert_equal object.oid, "53fc32d17276939fc79ed05badaef2db09990016"
   end
 
   def test_find_reference
