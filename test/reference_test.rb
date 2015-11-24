@@ -150,6 +150,16 @@ class ReferenceTest < Rugged::TestCase
     refute repo.references["refs/heads/master"].tag?
     refute repo.references["refs/remotes/test/master"].tag?
   end
+
+  def test_lookup_refs
+    refs = @repo.references.lookup('41bc8c69075bbdb46c5c6f0566cc8cc5b46e8bd9').to_a
+    assert_equal refs.map(&:name), %w[refs/heads/packed]
+    refs = @repo.references.lookup('e90810b8df3e80c413d903f631643c716887138d').to_a
+    assert_equal refs.map(&:name), %w[refs/heads/test refs/tags/e90810b refs/tags/foo/bar refs/tags/foo/foo/bar
+                                      refs/tags/test refs/tags/packed-tag]
+    refs = @repo.references.lookup('e90810b8df3e80c413d903f631643c716887138d', 'refs/heads/*').to_a
+    assert_equal refs.map(&:name), %w[refs/heads/test]
+  end
 end
 
 class ReferenceWriteTest < Rugged::TestCase

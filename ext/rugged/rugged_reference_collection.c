@@ -215,6 +215,94 @@ static VALUE rb_git_reference_collection_each_name(int argc, VALUE *argv, VALUE 
 
 /*
  *  call-seq:
+ *    references.lookup(oid, glob = nil) { |ref_name| block } -> nil
+ *    references.lookup(oid, glob = nil) -> enumerator
+ *
+ *  Iterate through all the reference names in the collection's +repository+. Iteration
+ *  can be optionally filtered to the ones matching the given
+ *  +glob+, a standard Unix filename glob.
+ *
+ *  The given block will be called once with the name of each reference when it or
+ *  one of its dereference points to the specified oid.
+ *
+ *  If no block is given, an enumerator will be returned.
+ */
+static VALUE rb_git_reference_collection_lookup(int argc, VALUE *argv, VALUE self)
+{
+	VALUE rb_hex, rb_glob, rb_repo = rugged_owner(self);
+	int error, exception = 0, yield;
+	git_oid oid;
+	git_repository *repo;
+	git_reference *ref;
+	git_reference_iterator *iter;
+
+	rb_scan_args(argc, argv, "11", &rb_hex, &rb_glob);
+
+	if (!rb_block_given_p()) {
+		return rb_funcall(self, rb_intern("to_enum"), 3, CSTR2SYM("lookup"), rb_hex, rb_glob);
+	}
+
+    if (RSTRING_LEN(rb_hex) > GIT_OID_HEXSZ)
+        rb_raise(rb_eTypeError, "The given OID is too long");
+    if (RSTRING_LEN(rb_hex) < GIT_OID_HEXSZ)
+        rb_raise(rb_eTypeError, "The given OID is too short");
+
+	rugged_check_repo(rb_repo);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = git_oid_fromstrn(&oid, RSTRING_PTR(rb_hex), RSTRING_LEN(rb_hex));
+	rugged_exception_check(error);
+
+	if (!NIL_P(rb_glob)) {
+		Check_Type(rb_glob, T_STRING);
+		error = git_reference_iterator_glob_new(&iter, repo, StringValueCStr(rb_glob));
+	} else {
+		error = git_reference_iterator_new(&iter, repo);
+	}
+
+	while (!exception && error == GIT_OK && (error = git_reference_next(&ref, iter)) == GIT_OK) {
+		git_object *_obj;
+		git_reference *_ref, *_ref2;
+		git_tag *_tag;
+
+		_ref = ref;
+		while (error == GIT_OK && git_reference_type(_ref) == GIT_REF_SYMBOLIC) {
+			error = git_reference_lookup(&_ref2, repo, git_reference_symbolic_target(_ref));
+			if (_ref != ref) git_reference_free(_ref);
+			_ref = _ref2;
+		}
+		if (error != GIT_OK) break;
+		error = git_object_lookup(&_obj, repo, git_reference_target(_ref), GIT_OBJ_ANY);
+		while (error == GIT_OK && git_object_type(_obj) == GIT_OBJ_TAG) {
+		    _tag = (git_tag *) _obj;
+		    error = git_object_lookup(&_obj, repo, git_tag_target_id(_tag), GIT_OBJ_ANY);
+		    git_tag_free(_tag);
+		}
+		if (error == GIT_OK) {
+			yield = git_object_type(_obj) == GIT_OBJ_COMMIT &&
+			     git_oid_equal(git_commit_id((git_commit *) _obj), &oid);
+			git_object_free(_obj);
+			if (yield)
+				rb_protect(rb_yield, rugged_ref_new(rb_cRuggedReference, rb_repo, ref), &exception);
+		} else {
+			git_reference_free(ref);
+			break;
+		}
+	}
+
+	git_reference_iterator_free(iter);
+
+	if (exception)
+		rb_jump_tag(exception);
+
+	if (error != GIT_ITEROVER)
+		rugged_exception_check(error);
+
+	return Qnil;
+}
+
+/*
+ *  call-seq:
  *    references.exist?(name) -> true or false
  *    references.exists?(name) -> true or false
  *
@@ -435,6 +523,8 @@ void Init_rugged_reference_collection(void)
 
 	rb_define_method(rb_cRuggedReferenceCollection, "each",       rb_git_reference_collection_each, -1);
 	rb_define_method(rb_cRuggedReferenceCollection, "each_name",  rb_git_reference_collection_each_name, -1);
+
+	rb_define_method(rb_cRuggedReferenceCollection, "lookup",     rb_git_reference_collection_lookup, -1);
 
 	rb_define_method(rb_cRuggedReferenceCollection, "exist?",     rb_git_reference_collection_exist_p, 1);
 	rb_define_method(rb_cRuggedReferenceCollection, "exists?",    rb_git_reference_collection_exist_p, 1);
