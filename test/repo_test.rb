@@ -105,10 +105,20 @@ class RepositoryTest < Rugged::TestCase
     assert_equal object.oid, "e90810b8df3e80c413d903f631643c716887138d"
   end
 
+  def test_commitish_id
+    oid = @repo.commitish_id("test")
+    assert_equal oid, "e90810b8df3e80c413d903f631643c716887138d"
+  end
+
   def test_treeish
     object = @repo.treeish("test")
     assert object.kind_of?(Rugged::Tree)
     assert_equal object.oid, "53fc32d17276939fc79ed05badaef2db09990016"
+  end
+
+  def test_treeish_id
+    oid = @repo.treeish_id("test")
+    assert_equal oid, "53fc32d17276939fc79ed05badaef2db09990016"
   end
 
   def test_find_reference

@@ -135,11 +135,25 @@ module Rugged
       Rugged::Object.commitish(self, spec)
     end
 
+    # Look up a commit by a revision string.
+    #
+    # Returns the oid of Rugged::Commit, it will automatically dereference tag until a commit is got.
+    def commitish_id(spec)
+      Rugged::Object.commitish_id(self, spec)
+    end
+
     # Look up a tree by a revision string.
     #
     # Returns Rugged::Tree, it will automatically dereference tag until a commit is got.
     def treeish(spec)
       Rugged::Object.treeish(self, spec)
+    end
+
+    # Look up a tree by a revision string.
+    #
+    # Returns the oid of Rugged::Tree, it will automatically dereference tag until a commit is got.
+    def treeish_id(spec)
+      Rugged::Object.treeish_id(self, spec)
     end
 
     # Look up an object by a revision string.

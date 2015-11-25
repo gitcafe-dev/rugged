@@ -279,7 +279,7 @@ VALUE rugged_object_rev_parse(VALUE rb_repo, VALUE rb_spec, int as_obj)
 	return ret;
 }
 
-static int rugged_commitish_rev_parse(git_repository* repo, const char *spec, git_commit **commit) {
+static int rugged_commitish(git_repository* repo, const char *spec, git_commit **commit) {
 	int error;
 	git_object *object;
 	git_tag *tag;
@@ -305,49 +305,83 @@ static int rugged_commitish_rev_parse(git_repository* repo, const char *spec, gi
 	}
 }
 
-VALUE rb_git_object_rev_parse_commitish(VALUE klass, VALUE rb_repo, VALUE rb_spec)
-{
-	const char *spec;
-	int error;
-	git_repository *repo;
-	git_commit *commit;
-
-	Check_Type(rb_spec, T_STRING);
-	spec = StringValueCStr(rb_spec);
-
-	rugged_check_repo(rb_repo);
-
-	Data_Get_Struct(rb_repo, git_repository, repo);
-
-	error = rugged_commitish_rev_parse(repo, spec, &commit);
-	rugged_exception_check(error);
-
-	return rugged_object_new(rb_repo, (git_object *) commit);
-}
-
-VALUE rb_git_object_rev_parse_treeish(VALUE klass, VALUE rb_repo, VALUE rb_spec)
-{
-	const char *spec;
+static VALUE rugged_commitish_or_treeish(VALUE rb_repo, VALUE rb_spec, int is_commit, int as_obj) {
 	int error;
 	git_repository *repo;
 	git_commit *commit;
 	git_tree *tree;
+	git_object *object;
+	const char *spec;
+	VALUE ret;
 
 	Check_Type(rb_spec, T_STRING);
 	spec = StringValueCStr(rb_spec);
 
 	rugged_check_repo(rb_repo);
-
 	Data_Get_Struct(rb_repo, git_repository, repo);
 
-	error = rugged_commitish_rev_parse(repo, spec, &commit);
+	error = rugged_commitish(repo, spec, &commit);
 	rugged_exception_check(error);
+	object = (git_object *) commit;
 
-	error = git_commit_tree(&tree, commit);
-	git_commit_free(commit);
-	rugged_exception_check(error);
+	if (!is_commit) {
+		error = git_commit_tree(&tree, commit);
+		git_commit_free(commit);
+		rugged_exception_check(error);
+		object = (git_object *) tree;
+	}
 
-	return rugged_object_new(rb_repo, (git_object *) tree);
+	if (!as_obj) {
+		ret = rugged_create_oid(git_object_id(object));
+		git_object_free(object);
+	} else {
+		ret = rugged_object_new(rb_repo, object);
+	}
+	return ret;
+}
+
+/*
+ *  call-seq: Object.commitish(repo, str) -> object
+ *
+ *  Find and return a single commit inside +repo+ as specified by the
+ *  git revision string +str+.
+ *
+ */
+VALUE rb_git_object_commitish(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_commitish_or_treeish(rb_repo, rb_spec, 1, 1);
+}
+
+/*
+ *  call-seq: Object.commitish_id(repo, str) -> object
+ *
+ *  Find and return a single commit oid inside +repo+ as specified by the
+ *  git revision string +str+.
+ *
+ */
+VALUE rb_git_object_commitish_id(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_commitish_or_treeish(rb_repo, rb_spec, 1, 0);
+}
+
+/*
+ *  call-seq: Object.treeish(repo, str) -> object
+ *
+ *  Find and return the root tree from commit inside +repo+ as specified by the
+ *  git revision string +str+.
+ *
+ */
+VALUE rb_git_object_treeish(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_commitish_or_treeish(rb_repo, rb_spec, 0, 1);
+}
+
+/*
+ *  call-seq: Object.treeish_id(repo, str) -> object
+ *
+ *  Find and return the root tree oid from commit inside +repo+ as specified by the
+ *  git revision string +str+.
+ *
+ */
+VALUE rb_git_object_treeish_id(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_commitish_or_treeish(rb_repo, rb_spec, 0, 0);
 }
 
 /*
@@ -445,8 +479,10 @@ void Init_rugged_object(void)
 	rb_define_singleton_method(rb_cRuggedObject, "lookup", rb_git_object_lookup, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse", rb_git_object_rev_parse, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse_oid", rb_git_object_rev_parse_oid, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "commitish", rb_git_object_rev_parse_commitish, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "treeish", rb_git_object_rev_parse_treeish, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "commitish", rb_git_object_commitish, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "commitish_id", rb_git_object_commitish_id, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "treeish", rb_git_object_treeish, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "treeish_id", rb_git_object_treeish_id, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "new", rb_git_object_lookup, 2);
 
 	rb_define_method(rb_cRuggedObject, "read_raw", rb_git_object_read_raw, 0);
