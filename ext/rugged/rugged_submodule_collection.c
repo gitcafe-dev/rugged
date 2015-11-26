@@ -25,6 +25,7 @@
 #include "rugged.h"
 
 extern VALUE rb_mRugged;
+extern VALUE rb_cRuggedTree;
 extern VALUE rb_cRuggedSubmodule;
 VALUE rb_cRuggedSubmoduleCollection;
 
@@ -88,6 +89,37 @@ static VALUE rb_git_submodule_collection_aref(VALUE self, VALUE rb_name)
 			&submodule,
 			repo,
 			StringValueCStr(rb_name)
+		);
+
+	if (error == GIT_ENOTFOUND)
+		return Qnil;
+
+	rugged_exception_check(error);
+
+	return rugged_submodule_new(rb_repo, submodule);
+}
+
+static VALUE rb_git_submodule_collection_find_from(VALUE self, VALUE rb_name, VALUE rb_tree)
+{
+	git_repository *repo;
+	git_submodule *submodule;
+	git_tree *tree;
+	int error;
+
+	VALUE rb_repo = rugged_owner(self);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	Check_Type(rb_name, T_STRING);
+
+	if (!rb_obj_is_kind_of(rb_tree, rb_cRuggedTree))
+		rb_raise(rb_eTypeError, "Expecting a Rugged Tree");
+	Data_Get_Struct(rb_tree, git_tree, tree);
+
+	error = git_submodule_lookup_from_tree(
+			&submodule,
+			repo,
+			StringValueCStr(rb_name),
+			tree
 		);
 
 	if (error == GIT_ENOTFOUND)
@@ -376,6 +408,7 @@ void Init_rugged_submodule_collection(void)
 
 	rb_define_method(rb_cRuggedSubmoduleCollection, "initialize", rb_git_submodule_collection_initialize, 1);
 	rb_define_method(rb_cRuggedSubmoduleCollection, "[]",         rb_git_submodule_collection_aref, 1);
+	rb_define_method(rb_cRuggedSubmoduleCollection, "find_from",  rb_git_submodule_collection_find_from, 2);
 	rb_define_method(rb_cRuggedSubmoduleCollection, "each",       rb_git_submodule_collection_each, 0);
 
 	rb_define_method(rb_cRuggedSubmoduleCollection, "update",     rb_git_submodule_update, 2);

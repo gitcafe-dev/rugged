@@ -26,6 +26,16 @@ module Rugged
       submodule.finalize_add
     end
 
+    def find(name, treeish = 'HEAD')
+      tree = case treeish
+             when String then @owner.treeish(treeish)
+             when Commit then treeish.tree
+             when Tree   then treeish
+             else raise ArgumentError, "Expecting a treeish, which could be String, Rugged::Commit or Rugged::Tree"
+             end
+      find_from name, tree
+    end
+
     private
     # currently libgit2's `git_submodule_add_setup` initializes a repo
     # with a workdir for the submodule. libgit2's `git_clone` however
