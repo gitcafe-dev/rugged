@@ -289,6 +289,24 @@ static VALUE each_tag(int argc, VALUE *argv, VALUE self, int tag_names_only)
 	return Qnil;
 }
 
+static VALUE rb_git_tag_collection_exists(VALUE self, VALUE rb_tag_name) {
+	git_repository *repo;
+	git_strarray tags;
+	int error, count;
+	VALUE rb_repo = rugged_owner(self);
+
+	rugged_check_repo(rb_repo);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = git_tag_list_match(&tags, StringValueCStr(rb_tag_name), repo);
+	rugged_exception_check(error);
+
+	count = tags.count;
+	git_strarray_free(&tags);
+
+	return count > 0 ? Qtrue : Qfalse;
+}
+
 /*
  *  call-seq:
  *    tags.each_name([pattern]) { |name| block } -> nil
@@ -342,6 +360,9 @@ void Init_rugged_tag_collection(void)
 
 	rb_define_method(rb_cRuggedTagCollection, "each",       rb_git_tag_collection_each, -1);
 	rb_define_method(rb_cRuggedTagCollection, "each_name",  rb_git_tag_collection_each_name, -1);
+
+	rb_define_method(rb_cRuggedTagCollection, "exist?",       rb_git_tag_collection_exists, 1);
+	rb_define_method(rb_cRuggedTagCollection, "exists?",      rb_git_tag_collection_exists, 1);
 
 	rb_define_method(rb_cRuggedTagCollection, "delete",     rb_git_tag_collection_delete, 1);
 }

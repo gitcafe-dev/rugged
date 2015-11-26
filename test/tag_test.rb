@@ -98,6 +98,20 @@ class TagTest < Rugged::TestCase
     assert_equal tag_names[0], "annotated_tag_to_blob"
     assert_equal tag_names[1], "e90810b"
   end
+
+  def test_exists
+    @repo.tags.create("v2.0", "e90810b8df3e80c413d903f631643c716887138d")
+    assert @repo.tags.exist?('annotated_tag_to_blob')
+    assert @repo.tags.exists?('annotated_tag_to_blob')
+    assert @repo.tags.exist?('v2.0')
+    assert @repo.tags.exists?('v2.0')
+    assert !@repo.tags.exist?('annotated_tag_to_tree')
+    assert !@repo.tags.exists?('annotated_tag_to_tree')
+    assert !@repo.tags.exist?('v1.0')
+    assert !@repo.tags.exists?('v1.0')
+    assert !@repo.tags.exist?('v2')
+    assert !@repo.tags.exists?('v2')
+  end
 end
 
 class AnnotatedTagTest < Rugged::TestCase
