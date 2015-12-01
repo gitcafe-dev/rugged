@@ -40,6 +40,14 @@ class ObjectTest < Rugged::TestCase
     end
   end
 
+  def test_exists_can_validate_any_object_type
+    assert Rugged::Blob.exists?(@repo, "fa49b077")
+    assert Rugged::Commit.exists?(@repo, "8496071c")
+    assert Rugged::Tag::Annotation.exists?(@repo, "0c37a539")
+    assert Rugged::Tree.exists?(@repo, "c4dc1555")
+    assert !Rugged::Commit.exists?(@repo, "fa49b077")
+  end
+
   def test_lookup_object
     obj = @repo.lookup("8496071c1b46c854b31185ea97743be6a8774479")
     assert_equal :commit, obj.type

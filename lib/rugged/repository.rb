@@ -128,6 +128,34 @@ module Rugged
       Rugged::Tag::Annotation.lookup(self, oid)
     end
 
+    # Validate a Git Commit SHA1.
+    #
+    # Returns true or false.
+    def commit_exists?(oid)
+      Rugged::Commit.exists?(self, oid)
+    end
+
+    # Validate a Git Tree SHA1.
+    #
+    # Returns true or false.
+    def tree_exists?(oid)
+      Rugged::Tree.exists?(self, oid)
+    end
+
+    # Validate a Git Blob SHA1.
+    #
+    # Returns true or false.
+    def blob_exists?(oid)
+      Rugged::Blob.exists?(self, oid)
+    end
+
+    # Validate a Git Annotated Tag SHA1.
+    #
+    # Returns true or false.
+    def tag_exists?(oid)
+      Rugged::Tag::Annotation.exists?(self, oid)
+    end
+
     # Look up a commit by a revision string.
     #
     # Returns Rugged::Commit, it will automatically dereference tag until a commit is got.
