@@ -356,6 +356,53 @@ static VALUE rb_git_tree_path(VALUE self, VALUE rb_path)
 
 /*
  *  call-seq:
+ *    tree.lookup_by_path(path, type = :any) -> object
+ *
+ *  Retrieve and return a git object by its relative path.
+ */
+static VALUE rb_git_tree_lookup_by_path(int argc, VALUE *argv, VALUE self)
+{
+	int error;
+	git_tree *tree;
+	git_otype type;
+	git_object *object;
+	VALUE rb_path, rb_type, rb_repo;
+	ID id_type;
+
+	rb_scan_args(argc, argv, "11", &rb_path, &rb_type);
+
+	Data_Get_Struct(self, git_tree, tree);
+	Check_Type(rb_path, T_STRING);
+
+	if (!NIL_P(rb_type)) {
+		Check_Type(rb_type, T_SYMBOL);
+		id_type = SYM2ID(rb_type);
+		if (id_type == rb_intern("commit"))
+		    type = GIT_OBJ_COMMIT;
+		else if (id_type == rb_intern("tree"))
+		    type = GIT_OBJ_TREE;
+		else if (id_type == rb_intern("blob"))
+		    type = GIT_OBJ_BLOB;
+		else if (id_type == rb_intern("tag"))
+		    type = GIT_OBJ_TAG;
+		else if (id_type == rb_intern("any"))
+		    type = GIT_OBJ_ANY;
+		else
+			rb_raise(rb_eTypeError,
+					"Invalid object type. Expected `:commit` or `:tree` or `:blob` or `:tag`");
+	} else {
+		type = GIT_OBJ_ANY;
+	}
+	rb_repo = rugged_owner(self);
+
+	error = git_object_lookup_bypath(&object, (git_object *) tree, StringValueCStr(rb_path), type);
+	rugged_exception_check(error);
+
+	return rugged_object_new(rb_repo, object);
+}
+
+/*
+ *  call-seq:
  *    Tree.diff(repo, tree, diffable[, options]) -> diff
  *
  *  Returns a diff between the `tree` and the diffable object that was given.
@@ -895,6 +942,7 @@ void Init_rugged_tree(void)
 	rb_define_method(rb_cRuggedTree, "get_entry", rb_git_tree_get_entry, 1);
 	rb_define_method(rb_cRuggedTree, "get_entry_by_oid", rb_git_tree_get_entry_by_oid, 1);
 	rb_define_method(rb_cRuggedTree, "path", rb_git_tree_path, 1);
+	rb_define_method(rb_cRuggedTree, "lookup_by_path", rb_git_tree_lookup_by_path, -1);
 	rb_define_method(rb_cRuggedTree, "diff_workdir", rb_git_tree_diff_workdir, -1);
 	rb_define_method(rb_cRuggedTree, "[]", rb_git_tree_get_entry, 1);
 	rb_define_method(rb_cRuggedTree, "each", rb_git_tree_each, 0);

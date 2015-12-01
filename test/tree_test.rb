@@ -109,6 +109,35 @@ class TreeTest < Rugged::TestCase
   def test_iterate_subtree_blobs
     @tree.each_blob {|tree| assert_equal :blob, tree[:type]}
   end
+
+  def test_path
+    assert_equal @tree.path('README'), name: 'README', oid: '1385f264afb75a56a5bec74243be9b367ba4ca08', filemode: 0100644, type: :blob
+    assert_equal @tree.path('subdir'), name: 'subdir', oid: '619f9935957e010c419cb9d15621916ddfcc0b96', filemode: 0040000, type: :tree
+    assert_equal @tree.path('subdir/subdir2'), name: 'subdir2', oid: 'f60079018b664e4e79329a7ef9559c8d9e0378d1', filemode: 0040000, type: :tree
+    assert_equal @tree.path('subdir/subdir2/README'), name: 'README', oid: '1385f264afb75a56a5bec74243be9b367ba4ca08', filemode: 0100644, type: :blob
+
+    assert_raises Rugged::TreeError do
+      @tree.path('subdir/subdir2/README.txt')
+    end
+  end
+
+  def test_lookup_by_path
+    object = @tree.lookup_by_path 'README'
+    assert_instance_of Rugged::Blob, object
+    assert_equal object.oid, '1385f264afb75a56a5bec74243be9b367ba4ca08'
+
+    object = @tree.lookup_by_path 'subdir/subdir2', :tree
+    assert_instance_of Rugged::Tree, object
+    assert_equal object.oid, 'f60079018b664e4e79329a7ef9559c8d9e0378d1'
+
+    assert_raises Rugged::ObjectError do
+      @tree.lookup_by_path 'subdir/subdir2/README', :tree
+    end
+
+    assert_raises Rugged::TreeError do
+      @tree.lookup_by_path 'subdir/subdir2/README.txt', :tree
+    end
+  end
 end
 
 class TreeWriteTest < Rugged::TestCase
