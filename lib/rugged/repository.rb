@@ -159,29 +159,43 @@ module Rugged
     # Look up a commit by a revision string.
     #
     # Returns Rugged::Commit, it will automatically dereference tag until a commit is got.
-    def commitish(spec)
-      Rugged::Object.commitish(self, spec)
+    def commitish_parse(spec)
+      Rugged::Commit.peel(self, spec)
     end
 
     # Look up a commit by a revision string.
     #
     # Returns the oid of Rugged::Commit, it will automatically dereference tag until a commit is got.
-    def commitish_id(spec)
-      Rugged::Object.commitish_id(self, spec)
+    def commitish_parse_oid(spec)
+      Rugged::Commit.peel_oid(self, spec)
+    end
+
+    # Try to look up a commit by a revision string.
+    #
+    # Returns true if it can find the commit, it will automatically dereference tag until a commit is got.
+    def commitish_valid?(spec)
+      Rugged::Commit.can_peel?(self, spec)
     end
 
     # Look up a tree by a revision string.
     #
     # Returns Rugged::Tree, it will automatically dereference tag until a commit is got.
-    def treeish(spec)
-      Rugged::Object.treeish(self, spec)
+    def treeish_parse(spec)
+      Rugged::Tree.peel(self, spec)
     end
 
     # Look up a tree by a revision string.
     #
     # Returns the oid of Rugged::Tree, it will automatically dereference tag until a commit is got.
-    def treeish_id(spec)
-      Rugged::Object.treeish_id(self, spec)
+    def treeish_parse_oid(spec)
+      Rugged::Tree.peel_oid(self, spec)
+    end
+
+    # Try to look up a tree by a revision string.
+    #
+    # Returns true if it can find the tree, it will automatically dereference tag until a commit is got.
+    def treeish_valid?(spec)
+      Rugged::Tree.can_peel?(self, spec)
     end
 
     # Look up an object by a revision string.

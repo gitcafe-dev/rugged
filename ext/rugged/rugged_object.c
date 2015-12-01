@@ -324,111 +324,6 @@ VALUE rugged_object_rev_parse(VALUE rb_repo, VALUE rb_spec, int as_obj)
 	return ret;
 }
 
-static int rugged_commitish(git_repository* repo, const char *spec, git_commit **commit) {
-	int error;
-	git_object *object;
-	git_tag *tag;
-
-	if ((error = git_revparse_single(&object, repo, spec)) != GIT_OK)
-		return error;
-	while (git_object_type(object) == GIT_OBJ_TAG) {
-		tag = (git_tag *) object;
-		error = git_object_lookup(&object, repo, git_tag_target_id(tag), GIT_OBJ_ANY);
-		git_tag_free(tag);
-		if (error != GIT_OK)
-			return error;
-	}
-
-	if (git_object_type(object) != GIT_OBJ_COMMIT) {
-		git_object_free(object);
-		giterr_set(GITERR_INVALID,
-			"The requested type does not match the type in ODB");
-		return GIT_ENOTFOUND;
-	} else {
-		*commit = (git_commit *) object;
-		return GIT_OK;
-	}
-}
-
-static VALUE rugged_commitish_or_treeish(VALUE rb_repo, VALUE rb_spec, int is_commit, int as_obj) {
-	int error;
-	git_repository *repo;
-	git_commit *commit;
-	git_tree *tree;
-	git_object *object;
-	const char *spec;
-	VALUE ret;
-
-	Check_Type(rb_spec, T_STRING);
-	spec = StringValueCStr(rb_spec);
-
-	rugged_check_repo(rb_repo);
-	Data_Get_Struct(rb_repo, git_repository, repo);
-
-	error = rugged_commitish(repo, spec, &commit);
-	rugged_exception_check(error);
-	object = (git_object *) commit;
-
-	if (!is_commit) {
-		error = git_commit_tree(&tree, commit);
-		git_commit_free(commit);
-		rugged_exception_check(error);
-		object = (git_object *) tree;
-	}
-
-	if (!as_obj) {
-		ret = rugged_create_oid(git_object_id(object));
-		git_object_free(object);
-	} else {
-		ret = rugged_object_new(rb_repo, object);
-	}
-	return ret;
-}
-
-/*
- *  call-seq: Object.commitish(repo, str) -> object
- *
- *  Find and return a single commit inside +repo+ as specified by the
- *  git revision string +str+.
- *
- */
-VALUE rb_git_object_commitish(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
-	return rugged_commitish_or_treeish(rb_repo, rb_spec, 1, 1);
-}
-
-/*
- *  call-seq: Object.commitish_id(repo, str) -> object
- *
- *  Find and return a single commit oid inside +repo+ as specified by the
- *  git revision string +str+.
- *
- */
-VALUE rb_git_object_commitish_id(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
-	return rugged_commitish_or_treeish(rb_repo, rb_spec, 1, 0);
-}
-
-/*
- *  call-seq: Object.treeish(repo, str) -> object
- *
- *  Find and return the root tree from commit inside +repo+ as specified by the
- *  git revision string +str+.
- *
- */
-VALUE rb_git_object_treeish(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
-	return rugged_commitish_or_treeish(rb_repo, rb_spec, 0, 1);
-}
-
-/*
- *  call-seq: Object.treeish_id(repo, str) -> object
- *
- *  Find and return the root tree oid from commit inside +repo+ as specified by the
- *  git revision string +str+.
- *
- */
-VALUE rb_git_object_treeish_id(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
-	return rugged_commitish_or_treeish(rb_repo, rb_spec, 0, 0);
-}
-
 /*
  *  call-seq: Object.rev_parse(repo, str) -> object
  *
@@ -459,6 +354,86 @@ VALUE rb_git_object_rev_parse(VALUE klass, VALUE rb_repo, VALUE rb_spec)
 VALUE rb_git_object_rev_parse_oid(VALUE klass, VALUE rb_repo, VALUE rb_spec)
 {
 	return rugged_object_rev_parse(rb_repo, rb_spec, 0);
+}
+
+enum PeelAs {
+	AS_OBJECT, AS_OID, AS_BOOLEAN
+};
+
+static VALUE rugged_object_peel(VALUE klass, VALUE rb_repo, VALUE rb_spec, enum PeelAs as)
+{
+	int error;
+	git_object *object, *peeled;
+	git_repository *repo;
+	git_otype type;
+	VALUE ret;
+
+	Check_Type(rb_spec, T_STRING);
+
+	type = class2otype(klass);
+
+	if (type == GIT_OBJ_BAD)
+		type = GIT_OBJ_ANY;
+
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = git_revparse_single(&object, repo, StringValueCStr(rb_spec));
+	if (error == GIT_OK) {
+		error = git_object_peel(&peeled, object, type);
+		git_object_free(object);
+	}
+
+	switch (as) {
+	case AS_BOOLEAN:
+	    ret = error == GIT_OK ? Qtrue : Qfalse;
+	    break;
+	case AS_OID:
+		rugged_exception_check(error);
+	    ret = rugged_create_oid(git_object_id(peeled));
+	    break;
+	case AS_OBJECT:
+		rugged_exception_check(error);
+	    return rugged_object_new(rb_repo, peeled);
+	}
+
+	if (error == GIT_OK)
+		git_object_free(peeled);
+
+	return ret;
+}
+
+/*
+ *  call-seq: Object.peel(repo, str) -> object
+ *
+ *  Find and peel a single object inside +repo+ as specified by the
+ *  git revision string +str+.
+ *
+ */
+static VALUE rb_git_object_peel(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_object_peel(klass, rb_repo, rb_spec, AS_OBJECT);
+}
+
+
+/*
+ *  call-seq: Object.peel_oid(repo, str) -> object
+ *
+ *  Find and peel a single object inside +repo+ as specified by the
+ *  git revision string +str+, and only returns oid.
+ *
+ */
+static VALUE rb_git_object_peel_oid(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_object_peel(klass, rb_repo, rb_spec, AS_OID);
+}
+
+/*
+ *  call-seq: Object.can_peel?(repo, str) -> object
+ *
+ *  Find and try to peel a single object inside +repo+ as specified by the
+ *  git revision string +str+, and only returns true or false.
+ *
+ */
+static VALUE rb_git_object_try_peel(VALUE klass, VALUE rb_repo, VALUE rb_spec) {
+	return rugged_object_peel(klass, rb_repo, rb_spec, AS_BOOLEAN);
 }
 
 /*
@@ -526,10 +501,9 @@ void Init_rugged_object(void)
 	rb_define_singleton_method(rb_cRuggedObject, "exists?", rb_git_object_exists, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse", rb_git_object_rev_parse, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse_oid", rb_git_object_rev_parse_oid, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "commitish", rb_git_object_commitish, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "commitish_id", rb_git_object_commitish_id, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "treeish", rb_git_object_treeish, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "treeish_id", rb_git_object_treeish_id, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "peel", rb_git_object_peel, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "peel_oid", rb_git_object_peel_oid, 2);
+	rb_define_singleton_method(rb_cRuggedObject, "can_peel?", rb_git_object_try_peel, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "new", rb_git_object_lookup, 2);
 
 	rb_define_method(rb_cRuggedObject, "read_raw", rb_git_object_read_raw, 0);

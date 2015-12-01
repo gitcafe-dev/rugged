@@ -28,7 +28,7 @@ module Rugged
 
     def find(name, treeish = 'HEAD')
       tree = case treeish
-             when String then @owner.treeish(treeish)
+             when String then @owner.treeish_parse(treeish)
              when Commit then treeish.tree
              when Tree   then treeish
              else raise ArgumentError, "Expecting a treeish, which could be String, Rugged::Commit or Rugged::Tree"

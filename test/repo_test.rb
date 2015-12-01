@@ -99,26 +99,62 @@ class RepositoryTest < Rugged::TestCase
     assert object.kind_of?(Rugged::Tag::Annotation)
   end
 
-  def test_commitish
-    object = @repo.commitish("test")
+  def test_commit_exists
+    assert @repo.commit_exists?("e90810b8df3e80c413d903f631643c716887138d")
+  end
+
+  def test_tree_exists
+    assert @repo.tree_exists?("53fc32d17276939fc79ed05badaef2db09990016")
+  end
+
+  def test_blob_exists
+    assert @repo.blob_exists?("0266163a49e280c4f5ed1e08facd36a2bd716bcf")
+  end
+
+  def test_tag_exists
+    assert @repo.tag_exists?("b25fa35b38051e4ae45d4222e795f9df2e43f1d1")
+    assert @repo.tag_exists?("b25fa35")
+    assert !@repo.tag_exists?("0266163a49e280c4f5ed1e08facd36a2bd716bcf")
+    assert !@repo.tag_exists?("00000000")
+  end
+
+  def test_commitish_parse
+    object = @repo.commitish_parse("test")
     assert object.kind_of?(Rugged::Commit)
     assert_equal object.oid, "e90810b8df3e80c413d903f631643c716887138d"
   end
 
-  def test_commitish_id
-    oid = @repo.commitish_id("test")
+  def test_commitish_parse_id
+    oid = @repo.commitish_parse_oid("test")
     assert_equal oid, "e90810b8df3e80c413d903f631643c716887138d"
   end
 
-  def test_treeish
-    object = @repo.treeish("test")
+  def test_commitish_valid
+    assert @repo.commitish_valid?("test")
+    assert !@repo.commitish_valid?("53fc32d1")
+  end
+
+  def test_treeish_parse
+    object = @repo.treeish_parse("test")
+    assert object.kind_of?(Rugged::Tree)
+    assert_equal object.oid, "53fc32d17276939fc79ed05badaef2db09990016"
+
+    object = @repo.treeish_parse("53fc32d1")
     assert object.kind_of?(Rugged::Tree)
     assert_equal object.oid, "53fc32d17276939fc79ed05badaef2db09990016"
   end
 
-  def test_treeish_id
-    oid = @repo.treeish_id("test")
+  def test_treeish_parse_id
+    oid = @repo.treeish_parse_oid("test")
     assert_equal oid, "53fc32d17276939fc79ed05badaef2db09990016"
+
+    oid = @repo.treeish_parse_oid("53fc32d1")
+    assert_equal oid, "53fc32d17276939fc79ed05badaef2db09990016"
+  end
+
+  def test_treeish_valid
+    assert @repo.treeish_valid?("test")
+    assert @repo.treeish_valid?("53fc32d1")
   end
 
   def test_find_reference

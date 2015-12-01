@@ -48,6 +48,60 @@ class ObjectTest < Rugged::TestCase
     assert !Rugged::Commit.exists?(@repo, "fa49b077")
   end
 
+  def test_peel_to_specified_type
+    object = Rugged::Object.peel(@repo, '8496071c')
+    assert_instance_of Rugged::Tree, object
+    assert_equal object.oid, '181037049a54a1eb5fab404658a3a250b44335d7'
+    assert_equal Rugged::Object.peel_oid(@repo, '8496071c'), '181037049a54a1eb5fab404658a3a250b44335d7'
+    assert Rugged::Object.can_peel?(@repo, '8496071c')
+    assert Rugged::Tree.can_peel?(@repo, '8496071c')
+
+    object = Rugged::Commit.peel(@repo, '8496071c')
+    assert_instance_of Rugged::Commit, object
+    assert_equal object.oid, '8496071c1b46c854b31185ea97743be6a8774479'
+    assert_equal Rugged::Commit.peel_oid(@repo, '8496071c'), '8496071c1b46c854b31185ea97743be6a8774479'
+    assert Rugged::Commit.can_peel?(@repo, '8496071c')
+
+    assert_raises Rugged::ObjectError do
+      Rugged::Object.peel(@repo, '18103704')
+    end
+
+    assert_raises Rugged::ReferenceError do
+      Rugged::Object.peel(@repo, '00000000')
+    end
+
+    object = Rugged::Commit.peel(@repo, 'v0.9')
+    assert_instance_of Rugged::Commit, object
+    assert_equal object.oid, '5b5b025afb0b4c913b4c338a42934a3863bf3644'
+    assert_equal Rugged::Commit.peel_oid(@repo, 'v0.9'), '5b5b025afb0b4c913b4c338a42934a3863bf3644'
+    assert Rugged::Commit.can_peel?(@repo, 'v0.9')
+
+    object = Rugged::Tree.peel(@repo, 'v0.9')
+    assert_instance_of Rugged::Tree, object
+    assert_equal object.oid, 'f60079018b664e4e79329a7ef9559c8d9e0378d1'
+    assert_equal Rugged::Tree.peel_oid(@repo, 'v0.9'), 'f60079018b664e4e79329a7ef9559c8d9e0378d1'
+    assert Rugged::Tree.can_peel?(@repo, 'v0.9')
+    assert !Rugged::Tag::Annotation.can_peel?(@repo, 'v0.9')
+
+    object = Rugged::Commit.peel(@repo, 'v1.0')
+    assert_instance_of Rugged::Commit, object
+    assert_equal object.oid, '5b5b025afb0b4c913b4c338a42934a3863bf3644'
+    assert_equal Rugged::Commit.peel_oid(@repo, 'v1.0'), '5b5b025afb0b4c913b4c338a42934a3863bf3644'
+    assert Rugged::Commit.can_peel?(@repo, 'v1.0')
+
+    object = Rugged::Tree.peel(@repo, 'v1.0')
+    assert_instance_of Rugged::Tree, object
+    assert_equal object.oid, 'f60079018b664e4e79329a7ef9559c8d9e0378d1'
+    assert_equal Rugged::Tree.peel_oid(@repo, 'v1.0'), 'f60079018b664e4e79329a7ef9559c8d9e0378d1'
+    assert Rugged::Tree.can_peel?(@repo, 'v1.0')
+
+    object = Rugged::Tag::Annotation.peel(@repo, 'v1.0')
+    assert_instance_of Rugged::Tag::Annotation, object
+    assert_equal object.oid, '0c37a5391bbff43c37f0d0371823a5509eed5b1d'
+    assert_equal Rugged::Tag::Annotation.peel_oid(@repo, 'v1.0'), '0c37a5391bbff43c37f0d0371823a5509eed5b1d'
+    assert Rugged::Tag::Annotation.can_peel?(@repo, 'v1.0')
+  end
+
   def test_lookup_object
     obj = @repo.lookup("8496071c1b46c854b31185ea97743be6a8774479")
     assert_equal :commit, obj.type
