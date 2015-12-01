@@ -140,6 +140,29 @@ static VALUE rb_git_valid_full_oid(VALUE self, VALUE hex)
 
 /*
  *  call-seq:
+ *    Rugged.valid_oid?(oid) -> true or false
+ *
+ *  Checks to see if a string contains a valid object id.
+ *
+ *    Rugged.valid_oid?('d8786bfcf')
+ *    #=> true
+ */
+static VALUE rb_git_valid_oid(VALUE self, VALUE hex)
+{
+	git_oid oid;
+	int errorcode;
+
+	Check_Type(hex, T_STRING);
+	errorcode = git_oid_fromstrn(&oid, RSTRING_PTR(hex), RSTRING_LEN(hex));
+	if (errorcode < 0) {
+		return Qfalse;
+	} else {
+		return Qtrue;
+	}
+}
+
+/*
+ *  call-seq:
  *    Rugged.hex_to_raw(oid) -> raw_buffer
  *
  *  Turn a string of 40 hexadecimal characters into the buffer of
@@ -451,6 +474,7 @@ void Init_rugged(void)
 	rb_define_module_function(rb_mRugged, "libgit2_version", rb_git_libgit2_version, 0);
 	rb_define_module_function(rb_mRugged, "features", rb_git_features, 0);
 	rb_define_module_function(rb_mRugged, "valid_full_oid?", rb_git_valid_full_oid, 1);
+	rb_define_module_function(rb_mRugged, "valid_oid?", rb_git_valid_oid, 1);
 	rb_define_module_function(rb_mRugged, "hex_to_raw", rb_git_hex_to_raw, 1);
 	rb_define_module_function(rb_mRugged, "raw_to_hex", rb_git_raw_to_hex, 1);
 	rb_define_module_function(rb_mRugged, "minimize_oid", rb_git_minimize_oid, -1);
