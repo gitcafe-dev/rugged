@@ -832,7 +832,7 @@ static VALUE rb_git_repo_merge_analysis(int argc, VALUE *argv, VALUE self)
 /*
  *  call-seq:
  *    repo.revert_commit(revert_commit, our_commit, options = {}) -> index
- *    
+ *
  *	Reverts the given commit against the given "our" commit, producing an
  *	index that reflects the result of the revert.
  */

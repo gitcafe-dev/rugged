@@ -556,6 +556,28 @@ static VALUE rb_git_commit_to_mbox(int argc, VALUE *argv, VALUE self)
 	return rb_email_patch;
 }
 
+static VALUE rb_git_commit_stats(int argc, VALUE *argv, VALUE self) {
+	VALUE owner, rb_path_only;
+	git_repository *repo;
+	git_commit *commit;
+	char *path_only;
+
+	rb_scan_args(argc, argv, "01", &rb_path_only);
+
+	Data_Get_Struct(self, git_commit, commit);
+
+	owner = rugged_owner(self);
+	Data_Get_Struct(owner, git_repository, repo);
+
+	if (!NIL_P(rb_path_only)) {
+		Check_Type(rb_path_only, T_STRING);
+		path_only = StringValueCStr(rb_path_only);
+	} else {
+		path_only = NULL;
+	}
+
+	return rugged_commit_stats_of(repo, commit, path_only);
+}
 
 void Init_rugged_commit(void)
 {
@@ -577,6 +599,8 @@ void Init_rugged_commit(void)
 	rb_define_method(rb_cRuggedCommit, "parent_oids", rb_git_commit_parent_ids_GET, 0);
 
 	rb_define_method(rb_cRuggedCommit, "amend", rb_git_commit_amend, 1);
+
+	rb_define_method(rb_cRuggedCommit, "stats", rb_git_commit_stats, -1);
 
 	rb_define_method(rb_cRuggedCommit, "to_mbox", rb_git_commit_to_mbox, -1);
 }

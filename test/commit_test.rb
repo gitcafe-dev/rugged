@@ -174,6 +174,32 @@ class TestCommit < Rugged::TestCase
     amended_commit = @repo.lookup(new_commit_oid)
     assert_equal tree_oid, amended_commit.tree.oid
   end
+
+  def test_stats
+    commit = @repo.lookup "36060c58702ed4c2a40832c51758d5344201d89a"
+
+    stats = commit.stats
+    assert_equal stats.adds, 4
+    assert_equal stats.dels, 0
+    assert_equal stats.oid, commit.oid
+    assert_equal stats.committer, commit.committer
+    assert_equal stats.author, commit.author
+
+    stats = commit.stats 'subdir/subdir2/new.txt'
+    assert_equal stats.adds, 1
+    assert_equal stats.dels, 0
+    assert_equal stats.oid, commit.oid
+    assert_equal stats.committer, commit.committer
+    assert_equal stats.author, commit.author
+
+    commit = @repo.lookup "8496071c1b46c854b31185ea97743be6a8774479"
+    stats = commit.stats
+    assert_equal stats.adds, 1
+    assert_equal stats.dels, 0
+    assert_equal stats.oid, commit.oid
+    assert_equal stats.committer, commit.committer
+    assert_equal stats.author, commit.author
+  end
 end
 
 class CommitWriteTest < Rugged::TestCase

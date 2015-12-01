@@ -75,6 +75,7 @@ void Init_rugged_diff_line(void);
 void Init_rugged_blame(void);
 void Init_rugged_cred(void);
 void Init_rugged_backend(void);
+void Init_rugged_commit_stat(void);
 
 VALUE rb_git_object_init(git_otype type, int argc, VALUE *argv, VALUE self);
 
@@ -94,6 +95,7 @@ VALUE rugged_diff_delta_new(VALUE owner, const git_diff_delta *delta);
 VALUE rugged_diff_hunk_new(VALUE owner, size_t hunk_idx, const git_diff_hunk *hunk, size_t lines_in_hunk);
 VALUE rugged_diff_line_new(const git_diff_line *line);
 VALUE rugged_remote_new(VALUE owner, git_remote *remote);
+VALUE rugged_commit_stats_of(git_repository *repo, git_commit *commit, const char *path_only);
 VALUE rb_git_delta_file_fromC(const git_diff_file *file);
 
 void rugged_parse_diff_options(git_diff_options *opts, VALUE rb_options);
