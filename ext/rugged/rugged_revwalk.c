@@ -105,6 +105,7 @@ static VALUE rb_git_walker_new(VALUE klass, VALUE rb_repo)
 	git_revwalk *walk;
 	int error;
 
+	rugged_check_repo(rb_repo);
 	Data_Get_Struct(rb_repo, git_repository, repo);
 
 	error = git_revwalk_new(&walk, repo);
@@ -610,11 +611,42 @@ static VALUE rb_git_walker_each_oid(int argc, VALUE *argv, VALUE self)
 	return rb_git_walk_with_opts(argc, argv, self, 1);
 }
 
+static VALUE rb_git_walker_count(int argc, VALUE *argv, VALUE self) {
+	int error;
+	unsigned long count;
+	git_oid oid;
+	git_repository *repo;
+	git_revwalk *walk;
+	VALUE rb_repo, rb_show_commit, rb_hide_commit;
+
+	rb_scan_args(argc, argv, "21", &rb_repo, &rb_show_commit, &rb_hide_commit);
+
+	rugged_check_repo(rb_repo);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	error = git_revwalk_new(&walk, repo);
+	rugged_exception_check(error);
+
+	push_commit(walk, rb_show_commit, 0);
+	if (!NIL_P(rb_hide_commit))
+		push_commit(walk, rb_hide_commit, 1);
+
+	for (count = 0; (error = git_revwalk_next(&oid, walk)) == GIT_OK; count++)
+		;
+	git_revwalk_free(walk);
+
+	if (error != GIT_ITEROVER)
+		rugged_exception_check(error);
+
+	return LONG2FIX(count);
+}
+
 void Init_rugged_revwalk(void)
 {
 	rb_cRuggedWalker = rb_define_class_under(rb_mRugged, "Walker", rb_cObject);
 	rb_define_singleton_method(rb_cRuggedWalker, "new", rb_git_walker_new, 1);
 	rb_define_singleton_method(rb_cRuggedWalker, "walk", rb_git_walk, -1);
+	rb_define_singleton_method(rb_cRuggedWalker, "count", rb_git_walker_count, -1);
 
 	rb_define_method(rb_cRuggedWalker, "push", rb_git_walker_push, 1);
 	rb_define_method(rb_cRuggedWalker, "push_range", rb_git_walker_push_range, 1);
