@@ -200,6 +200,15 @@ class TestCommit < Rugged::TestCase
     assert_equal stats.committer, commit.committer
     assert_equal stats.author, commit.author
   end
+
+  def test_commit_diff_between_repos
+    @repo2 = FixtureRepo.from_rugged("testrepo.git")
+    revs = Rugged::Commit.diff_between_repos @repo,  '41bc8c69075bbdb46c5c6f0566cc8cc5b46e8bd9',
+                                             @repo2, '36060c58702ed4c2a40832c51758d5344201d89a'
+    assert_equal revs, %w[36060c58702ed4c2a40832c51758d5344201d89a
+                          5b5b025afb0b4c913b4c338a42934a3863bf3644
+                          8496071c1b46c854b31185ea97743be6a8774479]
+  end
 end
 
 class CommitWriteTest < Rugged::TestCase

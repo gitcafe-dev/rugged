@@ -579,11 +579,102 @@ static VALUE rb_git_commit_stats(int argc, VALUE *argv, VALUE self) {
 	return rugged_commit_stats_of(repo, commit, path_only);
 }
 
+/*
+ *  call-seq:
+ *    Commit.diff_between_repos(repo1, commit1, repo2, commit2) -> commit_ids
+ *
+ *  Return a list of commit ids which are descendant of commit2 in repo2,
+ *  but are not descendant of commit1 in repo1.
+ *
+ */
+static VALUE rb_git_commit_diff_between_repos(VALUE klass, VALUE rb_repo1, VALUE rb_commit1, VALUE rb_repo2, VALUE rb_commit2) {
+	int error;
+	VALUE rb_oids;
+	git_commit *commit1;
+	git_oid oids[2], walk_oid;
+	git_oid *oid1 = &oids[0], *oid2 = &oids[1];
+	git_repository *repo1, *repo2;
+	git_odb *odb2;
+	git_revwalk *walk;
+	git_oidarray bases = {NULL, 0};
+
+	rugged_check_repo(rb_repo1);
+	Data_Get_Struct(rb_repo1, git_repository, repo1);
+
+	rugged_check_repo(rb_repo2);
+	Data_Get_Struct(rb_repo2, git_repository, repo2);
+
+	Check_Type(rb_commit1, T_STRING);
+	Check_Type(rb_commit2, T_STRING);
+
+	if (RSTRING_LEN(rb_commit1) < GIT_OID_HEXSZ || RSTRING_LEN(rb_commit2) < GIT_OID_HEXSZ)
+		rb_raise(rb_eArgError, "The given OID is too short");
+	if (RSTRING_LEN(rb_commit1) > GIT_OID_HEXSZ || RSTRING_LEN(rb_commit2) > GIT_OID_HEXSZ)
+		rb_raise(rb_eArgError, "The given OID is too long");
+
+	if ((error = git_oid_fromstr(oid1, RSTRING_PTR(rb_commit1))) != GIT_OK ||
+		(error = git_oid_fromstr(oid2, RSTRING_PTR(rb_commit2))) != GIT_OK)
+		rugged_exception_check(error);
+
+	error = git_repository_odb(&odb2, repo2);
+	rugged_exception_check(error);
+
+	while (oid1 != NULL && !git_odb_exists(odb2, oid1)) {
+		git_oid *parent_oid;
+		error = git_commit_lookup(&commit1, repo1, oid1);
+		if (error != GIT_OK) {
+			git_odb_free(odb2);
+			rugged_exception_check(error);
+		}
+		parent_oid = git_commit_parent_id(commit1, 0);
+		if (parent_oid != NULL)
+			git_oid_cpy(oid1, parent_oid);
+		else
+			oid1 = NULL;
+		git_commit_free(commit1);
+	}
+	git_odb_free(odb2);
+
+	if (oid1 != NULL) {
+		error = git_merge_bases_many(&bases, repo2, 2, oids);
+		if (error == GIT_ENOTFOUND)
+			oid1 = NULL;
+		else if (error != GIT_OK)
+			rugged_exception_check(error);
+		else {
+			git_oid_cpy(oid1, &bases.ids[0]);
+			git_oidarray_free(&bases);
+		}
+	}
+
+	error = git_revwalk_new(&walk, repo2);
+	rugged_exception_check(error);
+	git_revwalk_sorting(walk, GIT_SORT_TIME);
+	error = git_revwalk_push(walk, oid2);
+	if (error == GIT_OK && oid1 != NULL)
+		error = git_revwalk_hide(walk, oid1);
+	if (error != GIT_OK) {
+		git_revwalk_free(walk);
+		rugged_exception_check(error);
+	}
+	rb_oids = rb_ary_new();
+	while ((error = git_revwalk_next(&walk_oid, walk)) == GIT_OK)
+		rb_ary_push(rb_oids, rugged_create_oid(&walk_oid));
+
+	git_revwalk_free(walk);
+	if (error == GIT_ITEROVER)
+		return rb_oids;
+	else
+		rugged_exception_check(error);
+	return Qnil;
+}
+
 void Init_rugged_commit(void)
 {
 	rb_cRuggedCommit = rb_define_class_under(rb_mRugged, "Commit", rb_cRuggedObject);
 
 	rb_define_singleton_method(rb_cRuggedCommit, "create", rb_git_commit_create, 2);
+	rb_define_singleton_method(rb_cRuggedCommit, "diff_between_repos", rb_git_commit_diff_between_repos, 4);
 
 	rb_define_method(rb_cRuggedCommit, "message", rb_git_commit_message_GET, 0);
 	rb_define_method(rb_cRuggedCommit, "epoch_time", rb_git_commit_epoch_time_GET, 0);
