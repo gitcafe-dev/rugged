@@ -942,8 +942,8 @@ static VALUE rb_git_repo_merge_commits(int argc, VALUE *argv, VALUE self)
 
 /*
  *  call-seq:
- *    repo.include?(oid) -> true or false
- *    repo.exists?(oid) -> true or false
+ *    repo.include?(oid, type = :any) -> true or false
+ *    repo.exists?(oid, type = :any) -> true or false
  *
  *  Return whether an object with the given SHA1 OID (represented as
  *  a hex string of at least 7 characters) exists in the repository.
@@ -951,29 +951,44 @@ static VALUE rb_git_repo_merge_commits(int argc, VALUE *argv, VALUE self)
  *    repo.include?("d8786bfc97485e8d7b19b21fb88c8ef1f199fc3f") #=> true
  *    repo.include?("d8786bfc") #=> true
  */
-static VALUE rb_git_repo_exists(VALUE self, VALUE hex)
+static VALUE rb_git_repo_exists(int argc, VALUE *argv, VALUE self)
 {
+	VALUE rb_hex, rb_expected_type;
+	git_otype expected_type = GIT_OBJ_ANY;
 	git_repository *repo;
 	git_odb *odb;
-	git_oid oid;
+	git_oid oid, found_oid;
 	int error;
 
-	Data_Get_Struct(self, git_repository, repo);
-	Check_Type(hex, T_STRING);
+	rb_scan_args(argc, argv, "11", &rb_hex, &rb_expected_type);
 
-	error = git_oid_fromstrn(&oid, RSTRING_PTR(hex), RSTRING_LEN(hex));
+	Data_Get_Struct(self, git_repository, repo);
+
+	Check_Type(rb_hex, T_STRING);
+	expected_type = rugged_otype_get(rb_expected_type);
+
+	error = git_oid_fromstrn(&oid, RSTRING_PTR(rb_hex), RSTRING_LEN(rb_hex));
 	rugged_exception_check(error);
 
 	error = git_repository_odb(&odb, repo);
 	rugged_exception_check(error);
 
-	error = git_odb_exists_prefix(NULL, odb, &oid, RSTRING_LEN(hex));
-	git_odb_free(odb);
+	error = git_odb_exists_prefix(&found_oid, odb, &oid, RSTRING_LEN(rb_hex));
+	if (error != GIT_OK) {
+		git_odb_free(odb);
+		return Qfalse;
+	} else if (expected_type != GIT_OBJ_ANY) {
+		size_t found_size;
+		git_otype found_type;
 
-	if (error == 0 || error == GIT_EAMBIGUOUS)
+		error = git_odb_read_header(&found_size, &found_type, odb, &found_oid);
+		git_odb_free(odb);
+
+		return error == GIT_OK && found_type == expected_type ? Qtrue : Qfalse;
+	} else {
+		git_odb_free(odb);
 		return Qtrue;
-
-	return Qfalse;
+	}
 }
 
 /*
@@ -1112,6 +1127,56 @@ static VALUE rb_git_repo_expand_oids(int argc, VALUE *argv, VALUE self)
 
 	git_odb_free(odb);
 	return rb_result;
+}
+
+/**
+ *  call-seq:
+ *    repo.expand_oid(oid, object_type = :any) -> full_oid or nil
+ *
+ *  Expand a short oid to its full value, assuming it exists in the repository.
+ *  If `object_type` is passed, the OID is expected to be of the given type.
+ *  If the oid is not found or not be the expected type, returns nil.
+ */
+static VALUE rb_git_repo_expand_oid(int argc, VALUE *argv, VALUE self) {
+	VALUE rb_hex, rb_expected_type;
+	git_otype expected_type = GIT_OBJ_ANY;
+	git_repository *repo;
+	git_oid oid, found_oid;
+	git_odb *odb;
+	int error;
+
+	Data_Get_Struct(self, git_repository, repo);
+
+	rb_scan_args(argc, argv, "11", &rb_hex, &rb_expected_type);
+
+	Check_Type(rb_hex, T_STRING);
+	expected_type = rugged_otype_get(rb_expected_type);
+
+	error = git_repository_odb(&odb, repo);
+	rugged_exception_check(error);
+
+	error = git_oid_fromstrn(&oid, RSTRING_PTR(rb_hex), RSTRING_LEN(rb_hex));
+	if (error == GIT_OK)
+		error = git_odb_exists_prefix(&found_oid, odb, &oid, RSTRING_LEN(rb_hex));
+	if (error != GIT_OK) {
+		git_odb_free(odb);
+		if (error == GIT_ENOTFOUND)
+			return Qnil;
+		else
+			rugged_exception_check(error);
+	} else if (expected_type != GIT_OBJ_ANY) {
+		size_t found_size;
+		git_otype found_type;
+
+		error = git_odb_read_header(&found_size, &found_type, odb, &found_oid);
+		git_odb_free(odb);
+		rugged_exception_check(error);
+		return found_type == expected_type ? rugged_create_oid(&found_oid) : Qnil;
+	} else {
+		git_odb_free(odb);
+		return rugged_create_oid(&found_oid);
+	}
+	return Qnil;
 }
 
 /*
@@ -2546,8 +2611,9 @@ void Init_rugged_repo(void)
 
 	rb_define_method(rb_cRuggedRepo, "close", rb_git_repo_close, 0);
 
-	rb_define_method(rb_cRuggedRepo, "exists?", rb_git_repo_exists, 1);
-	rb_define_method(rb_cRuggedRepo, "include?", rb_git_repo_exists, 1);
+	rb_define_method(rb_cRuggedRepo, "exists?", rb_git_repo_exists, -1);
+	rb_define_method(rb_cRuggedRepo, "include?", rb_git_repo_exists, -1);
+	rb_define_method(rb_cRuggedRepo, "expand_oid", rb_git_repo_expand_oid, -1);
 	rb_define_method(rb_cRuggedRepo, "expand_oids", rb_git_repo_expand_oids, -1);
 	rb_define_method(rb_cRuggedRepo, "descendant_of?", rb_git_repo_descendant_of, 2);
 

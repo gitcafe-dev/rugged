@@ -23,9 +23,21 @@ class RepositoryTest < Rugged::TestCase
 
   def test_can_check_if_objects_exist
     assert @repo.exists?("8496071c1b46c854b31185ea97743be6a8774479")
+    assert @repo.exists?("8496071c")
+    assert @repo.exists?("8496071c1b46c854b31185ea97743be6a8774479", :commit)
+    assert @repo.exists?("8496071c", :commit)
     assert @repo.exists?("1385f264afb75a56a5bec74243be9b367ba4ca08")
+    assert @repo.exists?("1385f264")
+    assert @repo.exists?("1385f264afb75a56a5bec74243be9b367ba4ca08", :blob)
+    assert @repo.exists?("1385f264", :blob)
     assert !@repo.exists?("ce08fe4884650f067bd5703b6a59a8b3b3c99a09")
+    assert !@repo.exists?("ce08fe48")
     assert !@repo.exists?("8496071c1c46c854b31185ea97743be6a8774479")
+    assert !@repo.exists?("8496071c1c46c854")
+    assert !@repo.exists?("1385f264afb75a56a5bec74243be9b367ba4ca08", :commit)
+    assert !@repo.exists?("1385f264", :commit)
+    assert !@repo.exists?("1")
+    assert !@repo.exists?("1", :commit)
   end
 
   def test_can_read_a_raw_object
@@ -97,25 +109,6 @@ class RepositoryTest < Rugged::TestCase
   def test_lookup_tag
     object = @repo.lookup_tag("b25fa35b38051e4ae45d4222e795f9df2e43f1d1")
     assert object.kind_of?(Rugged::Tag::Annotation)
-  end
-
-  def test_commit_exists
-    assert @repo.commit_exists?("e90810b8df3e80c413d903f631643c716887138d")
-  end
-
-  def test_tree_exists
-    assert @repo.tree_exists?("53fc32d17276939fc79ed05badaef2db09990016")
-  end
-
-  def test_blob_exists
-    assert @repo.blob_exists?("0266163a49e280c4f5ed1e08facd36a2bd716bcf")
-  end
-
-  def test_tag_exists
-    assert @repo.tag_exists?("b25fa35b38051e4ae45d4222e795f9df2e43f1d1")
-    assert @repo.tag_exists?("b25fa35")
-    assert !@repo.tag_exists?("0266163a49e280c4f5ed1e08facd36a2bd716bcf")
-    assert !@repo.tag_exists?("00000000")
   end
 
   def test_commitish_parse
@@ -341,6 +334,18 @@ class RepositoryTest < Rugged::TestCase
   def test_expand_and_filter_objects
     assert_equal 2, @repo.expand_oids(['a4a7dce8', '1385f264af']).size
     assert_equal 1, @repo.expand_oids(['a4a7dce8', '1385f264af'], :commit).size
+  end
+
+  def test_exand_object
+    assert_equal 'a4a7dce85cf63874e984719f4fdd239f5145052f', @repo.expand_oid('a4a7dce8')
+    assert_equal 'a65fedf39aefe402d3bb6e24df4d4f5fe4547750', @repo.expand_oid('a65fedf3')
+    assert_nil @repo.expand_oid '00000000'
+  end
+
+  def test_exand_and_filter_object
+    assert_equal 'a4a7dce85cf63874e984719f4fdd239f5145052f', @repo.expand_oid('a4a7dce8', :commit)
+    assert_nil @repo.expand_oid('a4a7dce8', :tree)
+    assert_nil @repo.expand_oid('00000000', :tree)
   end
 
   def test_descendant_of

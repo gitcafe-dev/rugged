@@ -252,51 +252,6 @@ VALUE rb_git_object_lookup(VALUE klass, VALUE rb_repo, VALUE rb_hex)
 	return rugged_object_new(rb_repo, object);
 }
 
-/*
- *  call-seq:
- *    Object.exists?(repo, oid) -> true or false
- *
- *  Validate the git object with the given oid is existed or not.
- *
- *  +oid+ can either have be the complete, 40 character string or any
- *  unique prefix.
- */
-
-VALUE rb_git_object_exists(VALUE klass, VALUE rb_repo, VALUE rb_hex)
-{
-	git_object *object;
-	git_otype type;
-	git_oid oid;
-	int error;
-	int oid_length;
-
-	git_repository *repo;
-
-	type = class2otype(klass);
-
-	if (type == GIT_OBJ_BAD)
-		type = GIT_OBJ_ANY;
-
-	Check_Type(rb_hex, T_STRING);
-	oid_length = (int)RSTRING_LEN(rb_hex);
-
-	rugged_check_repo(rb_repo);
-
-	if (oid_length > GIT_OID_HEXSZ)
-		return Qfalse;
-
-	Data_Get_Struct(rb_repo, git_repository, repo);
-
-	error = git_oid_fromstrn(&oid, RSTRING_PTR(rb_hex), oid_length);
-	if (error != GIT_OK) return Qfalse;
-
-	error = git_object_lookup_prefix(&object, repo, &oid, oid_length, type);
-	if (error != GIT_OK) return Qfalse;
-
-	git_object_free(object);
-	return Qtrue;
-}
-
 VALUE rugged_object_rev_parse(VALUE rb_repo, VALUE rb_spec, int as_obj)
 {
 	git_object *object;
@@ -497,8 +452,6 @@ void Init_rugged_object(void)
 {
 	rb_cRuggedObject = rb_define_class_under(rb_mRugged, "Object", rb_cObject);
 	rb_define_singleton_method(rb_cRuggedObject, "lookup", rb_git_object_lookup, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "exist?", rb_git_object_exists, 2);
-	rb_define_singleton_method(rb_cRuggedObject, "exists?", rb_git_object_exists, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse", rb_git_object_rev_parse, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "rev_parse_oid", rb_git_object_rev_parse_oid, 2);
 	rb_define_singleton_method(rb_cRuggedObject, "peel", rb_git_object_peel, 2);
