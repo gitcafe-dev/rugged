@@ -146,6 +146,41 @@ static VALUE rb_git_remote_collection_aref(VALUE self, VALUE rb_name)
 	return rugged_remote_new(rb_repo, remote);
 }
 
+/*
+ *  call-seq:
+ *    remotes.exist? name -> true of false
+ *    remotes.exists? name -> true of false
+ *
+ *  Lookup a remote in the collection with the given +name+.
+ *
+ *  Returns true or false if the remote doesn't exist.
+ *
+ *    @repo.remotes.exist? "origin" #=> true
+ *    @repo.remotes.exists? "origin" #=> true
+ */
+static VALUE rb_git_remote_collection_exists(VALUE self, VALUE rb_name)
+{
+	git_remote *remote;
+	git_repository *repo;
+	int error;
+
+	VALUE rb_repo = rugged_owner(self);
+	rugged_check_repo(rb_repo);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	Check_Type(rb_name, T_STRING);
+
+	error = git_remote_lookup(&remote, repo, StringValueCStr(rb_name));
+
+	if (error == GIT_ENOTFOUND)
+		return Qfalse;
+
+	rugged_exception_check(error);
+	git_remote_free(remote);
+
+	return Qtrue;
+}
+
 static VALUE rb_git_remote_collection__each(VALUE self, int only_names)
 {
 	git_repository *repo;
@@ -439,6 +474,8 @@ void Init_rugged_remote_collection(void)
 	rb_define_method(rb_cRuggedRemoteCollection, "initialize",        rb_git_remote_collection_initialize, 1);
 
 	rb_define_method(rb_cRuggedRemoteCollection, "[]",                rb_git_remote_collection_aref, 1);
+	rb_define_method(rb_cRuggedRemoteCollection, "exist?",            rb_git_remote_collection_exists, 1);
+	rb_define_method(rb_cRuggedRemoteCollection, "exists?",           rb_git_remote_collection_exists, 1);
 
 	rb_define_method(rb_cRuggedRemoteCollection, "create",            rb_git_remote_collection_create, 2);
 	rb_define_method(rb_cRuggedRemoteCollection, "create_anonymous",  rb_git_remote_collection_create_anonymous, 1);

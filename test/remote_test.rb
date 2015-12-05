@@ -54,6 +54,13 @@ class RemoteTest < Rugged::TestCase
   class TestException < StandardError
   end
 
+  def test_exists
+    assert @repo.remotes.exists? 'empty-remote-pushurl'
+    assert @repo.remotes.exists? 'empty-remote-url'
+    assert @repo.remotes.exists? 'joshaber'
+    assert !@repo.remotes.exists?('bachue')
+  end
+
   def test_list_remote_names
     assert_equal ["empty-remote-pushurl", "empty-remote-url", "joshaber", "test", "test_with_pushurl"], @repo.remotes.each_name.sort
   end
