@@ -211,6 +211,37 @@ static VALUE rb_git_commit_parents_GET(VALUE self)
 
 /*
  *  call-seq:
+ *    commit.parent -> commit
+ *
+ *  Return the first parent of this commit as +Rugged::Commit+
+ *  object. Nil will be returned if the commit has no parent.
+ *
+ *  Don't try to apply this function on merge commit, which has multiple parents.
+ *
+ *    commit.parent #=> => #<Rugged::Commit:0x108828918>
+ *    root.parents #=> nil
+ */
+static VALUE rb_git_commit_parent_GET(VALUE self)
+{
+	git_commit *commit;
+	git_commit *parent;
+	VALUE owner;
+	int error;
+
+	Data_Get_Struct(self, git_commit, commit);
+	owner = rugged_owner(self);
+
+	if (git_commit_parentcount(commit) > 0) {
+		error = git_commit_parent(&parent, commit, 0);
+		rugged_exception_check(error);
+		return rugged_object_new(owner, (git_object *)parent);
+	} else {
+		return Qnil;
+	}
+}
+
+/*
+ *  call-seq:
  *    commit.parent_ids -> [oid, ...]
  *
  *  Return the parent oid(s) of this commit as an array of oid String
@@ -686,6 +717,7 @@ void Init_rugged_commit(void)
 	rb_define_method(rb_cRuggedCommit, "tree_oid", rb_git_commit_tree_id_GET, 0);
 
 	rb_define_method(rb_cRuggedCommit, "parents", rb_git_commit_parents_GET, 0);
+	rb_define_method(rb_cRuggedCommit, "parent", rb_git_commit_parent_GET, 0);
 	rb_define_method(rb_cRuggedCommit, "parent_ids", rb_git_commit_parent_ids_GET, 0);
 	rb_define_method(rb_cRuggedCommit, "parent_oids", rb_git_commit_parent_ids_GET, 0);
 

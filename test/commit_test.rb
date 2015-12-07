@@ -62,6 +62,7 @@ class TestCommit < Rugged::TestCase
 
     assert_equal obj.tree.oid, "181037049a54a1eb5fab404658a3a250b44335d7"
     assert_equal [], obj.parents
+    assert_equal nil, obj.parent
   end
 
   def test_commit_with_multiple_parents
@@ -70,6 +71,7 @@ class TestCommit < Rugged::TestCase
     parents = obj.parents.map {|c| c.oid }
     assert parents.include?("9fd738e8f7967c078dceed8190330fc8648ee56a")
     assert parents.include?("c47800c7266a2be04c571c04d5a6614691ea99bd")
+    assert obj.parent.oid, "c47800c7266a2be04c571c04d5a6614691ea99bd"
   end
 
   def test_get_parent_oids
