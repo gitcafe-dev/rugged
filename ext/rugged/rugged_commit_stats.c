@@ -3,14 +3,10 @@
 extern VALUE rb_cRuggedCommit;
 VALUE rb_cRuggedCommitStats;
 
-typedef struct commit_stats {
-    size_t adds, dels;
-    git_signature *committer, *author;
-    git_oid oid;
-} commit_stats;
+typedef struct commit_stats commit_stats;
 
 struct rb_git_commit_stats_cb_args {
-    commit_stats *stats;
+    int adds, dels;
     char *path_only;
 };
 
@@ -24,8 +20,8 @@ static int git_commit_stats_cb(
 
     if (!args->path_only || (strcmp(args->path_only, delta->old_file.path) == 0 && strcmp(args->path_only, delta->new_file.path) == 0)) {
         switch (line->origin) {
-        case GIT_DIFF_LINE_ADDITION: args->stats->adds++; break;
-        case GIT_DIFF_LINE_DELETION: args->stats->dels++; break;
+        case GIT_DIFF_LINE_ADDITION: args->adds++; break;
+        case GIT_DIFF_LINE_DELETION: args->dels++; break;
         default: break;
         }
     }
@@ -39,13 +35,34 @@ static void git_commit_stats__free(commit_stats *stats) {
     xfree(stats);
 }
 
+VALUE rugged_commit_stats_new(struct commit_stats *stats) {
+    return Data_Wrap_Struct(rb_cRuggedCommitStats, NULL, git_commit_stats__free, stats);
+}
+
+int git_commit_stats_of(git_repository *repo, git_tree *tree, git_tree *parent_tree,
+                        const char *path_only, size_t *adds, size_t *dels) {
+    int error;
+    git_diff *diff;
+    git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
+    struct rb_git_commit_stats_cb_args args;
+
+    error = git_diff_tree_to_tree(&diff, repo, parent_tree, tree, &diff_opts);
+    if (error == GIT_OK) {
+        args.adds = args.dels = 0;
+        args.path_only = path_only;
+        error = git_diff_foreach(diff, NULL, NULL, NULL, git_commit_stats_cb, &args);
+        git_diff_free(diff);
+        *adds = args.adds;
+        *dels = args.dels;
+    }
+    return error;
+}
+
 VALUE rugged_commit_stats_of(git_repository *repo, git_commit *commit, const char *path_only) {
     int error;
     commit_stats *stats;
     git_tree *tree, *parent_tree;
     git_commit *parent_commit;
-    git_diff *diff;
-    git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
 
     error = git_commit_tree(&tree, commit);
     rugged_exception_check(error);
@@ -72,22 +89,15 @@ VALUE rugged_commit_stats_of(git_repository *repo, git_commit *commit, const cha
         rugged_exception_check(error);
     }
 
-    error = git_diff_tree_to_tree(&diff, repo, parent_tree, tree, &diff_opts);
+    error = git_commit_stats_of(repo, tree, parent_tree, path_only, &stats->adds, &stats->dels);
     git_tree_free(tree);
     if (parent_tree) git_tree_free(parent_tree);
-    if (error == GIT_OK) {
-        struct rb_git_commit_stats_cb_args args;
-        args.stats = stats;
-        args.path_only = path_only;
-        error = git_diff_foreach(diff, NULL, NULL, NULL, git_commit_stats_cb, &args);
-        git_diff_free(diff);
-    }
     if (error != GIT_OK) {
         xfree(stats);
         rugged_exception_check(error);
     }
 
-    return Data_Wrap_Struct(rb_cRuggedCommitStats, NULL, git_commit_stats__free, stats);
+    return rugged_commit_stats_new(stats);
 }
 
 static VALUE rb_git_commit_stats_adds_GET(VALUE self) {

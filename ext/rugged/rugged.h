@@ -178,6 +178,17 @@ static inline VALUE rugged_create_oid(const git_oid *oid)
 	return rb_str_new(out, 40);
 }
 
+#include <pthread.h>
+#include <errno.h>
+
+struct commit_stats {
+    size_t adds, dels;
+    git_signature *committer, *author;
+    git_oid oid;
+};
+VALUE rugged_commit_stats_new(struct commit_stats *stats);
+int git_commit_stats_of(git_repository *repo, git_tree *tree, git_tree *parent_tree,
+                        const char *path_only, size_t *adds, size_t *dels);
 
 typedef struct _rugged_backend {
   int (* odb_backend)(git_odb_backend **backend_out, struct _rugged_backend *backend, const char* path);

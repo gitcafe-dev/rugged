@@ -587,27 +587,170 @@ static VALUE rb_git_commit_to_mbox(int argc, VALUE *argv, VALUE self)
 	return rb_email_patch;
 }
 
-static VALUE rb_git_commit_stats(int argc, VALUE *argv, VALUE self) {
-	VALUE owner, rb_path_only;
+typedef struct commit_stat_task {
+	git_tree *tree, *parent_tree;
+	struct commit_stats *stats;
+} commit_stat_task;
+
+typedef struct commit_stat_tasks {
 	git_repository *repo;
-	git_commit *commit;
-	char *path_only;
+	pthread_mutex_t mutex;
+	int top; // Make sure the top is thread-safe
+	size_t tasks_nr;
+	struct commit_stat_task *tasks;
+} commit_stat_tasks;
 
-	rb_scan_args(argc, argv, "01", &rb_path_only);
+static void* commit_stat_task_proc(void *_payload) {
+	int error = 0;
+	commit_stat_tasks *payload = (commit_stat_tasks *) _payload;
+	commit_stat_task *current_task;
+	struct commit_stats *current_stats;
+	git_repository *repo = payload->repo;
 
-	Data_Get_Struct(self, git_commit, commit);
+	current_stats = xmalloc(sizeof(struct commit_stats));
 
-	owner = rugged_owner(self);
-	Data_Get_Struct(owner, git_repository, repo);
-
-	if (!NIL_P(rb_path_only)) {
-		Check_Type(rb_path_only, T_STRING);
-		path_only = StringValueCStr(rb_path_only);
-	} else {
-		path_only = NULL;
+	for (;;) {
+	    if ((error = pthread_mutex_lock(&payload->mutex))) {
+	    	giterr_set(GITERR_OS, "Failed to lock mutex");
+	    	error = -1;
+	    	break;
+	    }
+	    if (payload->top >= payload->tasks_nr) {
+		    current_task = NULL;
+	    } else {
+		    current_task = &payload->tasks[payload->top];
+		    payload->top++;
+	    }
+	    if ((error = pthread_mutex_unlock(&payload->mutex))) {
+	    	giterr_set(GITERR_OS, "Failed to unlock mutex");
+	    	error = -1;
+	    	break;
+	    }
+	    if (current_task == NULL)
+	    	break;
+	    error = git_commit_stats_of(repo, current_task->tree, current_task->parent_tree, NULL,
+	    	                        &current_task->stats->adds, &current_task->stats->dels);
+	    if (error != GIT_OK)
+	    	break;
 	}
 
-	return rugged_commit_stats_of(repo, commit, path_only);
+	xfree(current_stats);
+	return (void *)(long) error;
+}
+
+static VALUE rb_git_commit_stats(VALUE klass, VALUE rb_repo, VALUE rb_commits) {
+	long error = 0;
+	int os_errno;
+	size_t i, j, arrlen, nr_threads;
+	VALUE rb_commit, rb_results = Qnil;
+	git_repository *repo;
+	git_commit *commit, *parent_commit;
+	pthread_t *threads;
+	commit_stat_tasks tasks;
+
+	Check_Type(rb_commits, T_ARRAY);
+	arrlen = RARRAY_LEN(rb_commits);
+
+	rugged_check_repo(rb_repo);
+	Data_Get_Struct(rb_repo, git_repository, repo);
+
+	nr_threads = git_online_cpus();
+	nr_threads = arrlen < nr_threads ? arrlen : nr_threads;
+
+	threads = xmalloc(sizeof(pthread_t) * nr_threads);
+
+	tasks.tasks_nr = arrlen;
+	tasks.repo = repo;
+	tasks.top = 0;
+	tasks.tasks = xmalloc(sizeof(commit_stat_task) * arrlen);
+	if ((os_errno = pthread_mutex_init(&tasks.mutex, NULL))) {
+		goto WRONG;
+	}
+	memset(tasks.tasks, 0, sizeof(commit_stat_task) * arrlen);
+
+	for (i = 0; i < arrlen; ++i) {
+		rb_commit = rb_ary_entry(rb_commits, i);
+		Data_Get_Struct(rb_commit, git_commit, commit);
+
+		error = git_commit_parent(&parent_commit, commit, 0);
+		if (error == GIT_ENOTFOUND) {
+			parent_commit = NULL;
+			error = GIT_OK;
+		} else if (error != GIT_OK) {
+			goto WRONG;
+		}
+
+		if (parent_commit != NULL) {
+			error = git_commit_tree(&tasks.tasks[i].parent_tree, parent_commit);
+			git_commit_free(parent_commit);
+		}
+		if (error == GIT_OK)
+			error = git_commit_tree(&tasks.tasks[i].tree, commit);
+		if (error != GIT_OK)
+			goto WRONG;
+
+		tasks.tasks[i].stats = xmalloc(sizeof(struct commit_stats));
+		memset(tasks.tasks[i].stats, 0, sizeof(struct commit_stats));
+		error = git_signature_dup(&tasks.tasks[i].stats->committer, git_commit_committer(commit));
+		if (error == GIT_OK) error = git_signature_dup(&tasks.tasks[i].stats->author, git_commit_author(commit));
+		if (error != GIT_OK)
+			goto WRONG;
+
+		git_oid_cpy(&tasks.tasks[i].stats->oid, git_commit_id(commit));
+	}
+
+	for (i = 0; i < nr_threads; ++i) {
+	    if ((os_errno = pthread_create(&threads[i], NULL, commit_stat_task_proc, &tasks))) {
+	    	for (j = 0; j < i; ++j)
+	    		pthread_cancel(threads[j]);
+			goto WRONG;
+	    }
+	}
+	for (i = 0; i < nr_threads; ++i) {
+	    if ((os_errno = pthread_join(threads[i], (void *) &error))) {
+	    	for (j = i + 1; j < nr_threads; ++j)
+	    		pthread_cancel(threads[j]);
+			goto WRONG;
+	    }
+	    if (error != GIT_OK) {
+	    	for (j = i + 1; j < nr_threads; ++j)
+	    		pthread_cancel(threads[j]);
+			goto WRONG;
+	    }
+	}
+
+	rb_results = rb_ary_new2(arrlen);
+	for (i = 0; i < arrlen; ++i)
+		rb_ary_push(rb_results, rugged_commit_stats_new(tasks.tasks[i].stats));
+
+	goto CLEAN;
+
+WRONG:
+	for (i = 0; i < arrlen; ++i) {
+		if (tasks.tasks[i].stats != NULL) {
+			if (tasks.tasks[i].stats->committer != NULL)
+				git_signature_free(tasks.tasks[i].stats->committer);
+			if (tasks.tasks[i].stats->author != NULL)
+				git_signature_free(tasks.tasks[i].stats->author);
+			xfree(tasks.tasks[i].stats);
+		}
+	}
+CLEAN:
+	for (i = 0; i < arrlen; ++i) {
+		if (tasks.tasks[i].tree != NULL)
+			git_tree_free(tasks.tasks[i].tree);
+		if (tasks.tasks[i].parent_tree != NULL)
+			git_tree_free(tasks.tasks[i].parent_tree);
+	}
+	pthread_mutex_destroy(&tasks.mutex);
+	xfree(tasks.tasks);
+	xfree(threads);
+	if (os_errno) {
+		VALUE rb_errno = INT2FIX(os_errno);
+		rb_exc_raise(rb_class_new_instance(1, &rb_errno, rb_eSystemCallError));
+	}
+	rugged_exception_check(error);
+	return rb_results;
 }
 
 /*
@@ -706,6 +849,7 @@ void Init_rugged_commit(void)
 
 	rb_define_singleton_method(rb_cRuggedCommit, "create", rb_git_commit_create, 2);
 	rb_define_singleton_method(rb_cRuggedCommit, "diff_between_repos", rb_git_commit_diff_between_repos, 4);
+	rb_define_singleton_method(rb_cRuggedCommit, "stats", rb_git_commit_stats, 2);
 
 	rb_define_method(rb_cRuggedCommit, "message", rb_git_commit_message_GET, 0);
 	rb_define_method(rb_cRuggedCommit, "epoch_time", rb_git_commit_epoch_time_GET, 0);
@@ -722,8 +866,6 @@ void Init_rugged_commit(void)
 	rb_define_method(rb_cRuggedCommit, "parent_oids", rb_git_commit_parent_ids_GET, 0);
 
 	rb_define_method(rb_cRuggedCommit, "amend", rb_git_commit_amend, 1);
-
-	rb_define_method(rb_cRuggedCommit, "stats", rb_git_commit_stats, -1);
 
 	rb_define_method(rb_cRuggedCommit, "to_mbox", rb_git_commit_to_mbox, -1);
 }
